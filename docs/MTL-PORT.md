@@ -183,7 +183,7 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
 ### Risks for first hardware boot (most likely first)
 
 1. **PNVM**: if the firmware does not accept the fragmented PNVM, `PNVM doorbell done, complete=0 err=35` (2 s timeout) and init aborts. Look at the SKU log line; if no SKU matched, the firmware proceeds without PNVM (regulatory/channels may be limited). Fallback experiment: clear CAPA 32 handling (use the concatenated path) to compare.
-2. **Lost wakeups**: itlwm sleeps on `msleep` without holding the flag lock; on MA the PNVM/INIT waits loop on the flag (OpenBSD style), but other waits (`iwx_load_firmware` 1 s for ALIVE) are unchanged.
+2. **Lost wakeups**: itlwm sleeps on `msleep` without holding the flag lock. On MA the ALIVE, PNVM and INIT_COMPLETE waits now check the flag before sleeping (log line `MTL: firmware load: alive_intr=...`); a wakeup between check and sleep can still cost one timeout.
 3. **Firmware assert (SYSASSERT) on a malformed command** -> `iwx_nic_error` dump in the log, then the init task restarts the device in a loop. Most likely candidates: PHY_CONTEXT v4 layout (we send the UHB channel-info layout because CAPA 48 is set), STA_CONFIG v1 size, LINK_CONFIG fields. The fw error dump's `cmd 0x...` / last host command tells which.
 4. **SCD queue id mismatch**: we require the firmware to assign qid 1 to the mgmt queue (OpenBSD does the same). If it returns another id, `iwx_enable_txq` fails with EIO and auth fails (log line `fw assigned qid X`).
 5. **SYSTEM_STATISTICS clear** waits up to 1 s for END_NOTIF; on timeout auth fails (OpenBSD behaviour). If this shows up, make it non-fatal.

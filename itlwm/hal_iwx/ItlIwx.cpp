@@ -4896,6 +4896,16 @@ iwx_load_firmware(struct iwx_softc *sc)
 //    for (w = 0; !sc->sc_uc.uc_intr && w < 10; w++) {
 //        err = tsleep_nsec(&sc->sc_uc, 0, "iwxuc", MSEC_TO_NSEC(100));
 //    }
+    if (CSR_HW_REV_TYPE(sc->sc_hw_rev) == IWL_CFG_MAC_TYPE_MA) {
+        /* MTL: ALIVE may already have arrived; do not sleep in that case. */
+        err = 0;
+        if (!sc->sc_uc.uc_intr)
+            err = tsleep_nsec(&sc->sc_uc, 0, "iwxuc", SEC_TO_NSEC(1));
+        if (sc->sc_uc.uc_intr && sc->sc_uc.uc_ok)
+            err = 0;
+        XYLog("MTL: firmware load: alive_intr=%d ok=%d err=%d\n",
+              sc->sc_uc.uc_intr, sc->sc_uc.uc_ok, err);
+    } else
     err = tsleep_nsec(&sc->sc_uc, 0, "iwxuc", SEC_TO_NSEC(1));
     if (err || !sc->sc_uc.uc_ok) {
         if (iwx_nic_lock(sc)) {
