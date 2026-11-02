@@ -217,6 +217,9 @@ public:
     int    iwx_read_pnvm(struct iwx_softc *);
     int     iwx_load_pnvm(struct iwx_softc *);
     int     iwx_pnvm_handle_section(struct iwx_softc *, const uint8_t *, size_t);
+    void    iwx_pnvm_dma_free(struct iwx_softc *);
+    int     iwx_pnvm_setup_fragmented(struct iwx_softc *, const uint8_t **, size_t *, int);
+    void    iwx_ctxt_info_gen3_set_pnvm(struct iwx_softc *);
     uint32_t iwx_read_prph_unlocked(struct iwx_softc *, uint32_t);
     uint32_t iwx_read_prph(struct iwx_softc *, uint32_t);
     uint32_t iwx_read_umac_prph(struct iwx_softc *, uint32_t);

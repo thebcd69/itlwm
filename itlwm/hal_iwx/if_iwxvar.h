@@ -384,6 +384,7 @@ struct iwx_rx_ring {
 #define IWX_FLAG_SHUTDOWN	0x100	/* shutting down; new tasks forbidden */
 #define IWX_FLAG_BGSCAN		0x200	/* background scan in progress */
 #define IWX_FLAG_TXFLUSH    0x400   /* Tx queue flushing in progress */
+#define IWX_FLAG_PHY_ACTIVE 0x800   /* MLD: PHY context added to firmware */
 
 struct iwx_ucode_status {
 	uint32_t uc_lmac_error_event_table[2];
@@ -654,11 +655,18 @@ struct iwx_softc {
     struct iwx_dma_info prph_info_dma;
     struct iwx_dma_info iml_dma;
     struct iwx_dma_info pnvm_dram;
+    /* MTL: PNVM image as OpenBSD r1.230 sets it up (fragmented or contiguous) */
+    struct iwx_dma_info pnvm_dma;
+    struct iwx_dma_info pnvm_seg_dma[IWX_MAX_DRAM_ENTRY];
+    size_t pnvm_size;
+    int pnvm_segs;
+    uint32_t sc_pnvm_ver;
 
 	int sc_fw_chunk_done;
 	int sc_init_complete;
 #define IWX_INIT_COMPLETE	0x01
 #define IWX_CALIB_COMPLETE	0x02
+#define IWX_PNVM_COMPLETE	0x04
 
 	struct iwx_ucode_status sc_uc;
 	char sc_fwver[32];
@@ -677,6 +685,10 @@ struct iwx_softc {
 #define IWX_IML_MAX_LEN 2048*10
     uint32_t sc_iml_len;
     uint8_t sc_iml[IWX_IML_MAX_LEN];
+    /* MTL: firmware with CAPA_MLD_API_SUPPORT on MA/BZ uses the MLD command set */
+    int sc_use_mld_api;
+    int sc_rate_n_flags_version;
+    uint32_t sc_mtl_scan_count;
 
 	int sc_intmask;
 	int sc_flags;

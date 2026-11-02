@@ -1795,6 +1795,16 @@ iwx_read_firmware(struct iwx_softc *sc)
             case 0x100000b:
                 break;
                 
+                /* MTL: TLVs of newer (-77..-92) images, ignored by OpenBSD r1.230 too */
+            case 65:            /* seen in bz -92 */
+            case 68:            /* IWX_UCODE_TLV_CURRENT_PC */
+            case 69:            /* seen in ma -89 / bz -92 */
+            case 0x101:         /* seen in ty -73 / ma -89 */
+            case 0x102:         /* IWX_UCODE_TLV_FW_NUM_BEACONS */
+            case 0x100000c:     /* seen in ty -77 / ma -89 */
+            case 1092:          /* seen in bz -92 */
+                break;
+                
             default:
                 //            err = EINVAL;
                 //            goto parse_out;
@@ -1816,6 +1826,12 @@ iwx_read_firmware(struct iwx_softc *sc)
     KASSERT(err == 0, "err == 0");
     
     XYLog("firmware parse done\n");
+    XYLog("MTL: firmware %s version %s, %d cmd versions, n_scan_ch %d, stations %d, MLD capa %d, fragmented PNVM capa %d, IML %u bytes\n",
+          sc->sc_fwname, sc->sc_fwver, sc->n_cmd_versions, sc->sc_capa_n_scan_channels,
+          sc->sc_capa_num_stations,
+          isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_MLD_API_SUPPORT) ? 1 : 0,
+          isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_FRAGMENTED_PNVM_IMG) ? 1 : 0,
+          sc->sc_iml_len);
     
 parse_out:
     if (err) {
@@ -1853,6 +1869,10 @@ iwx_pnvm_handle_section(struct iwx_softc *sc, const uint8_t *data, size_t len)
     uint32_t size = 0;
     int err = 0;
     struct iwx_prph_scratch_ctrl_cfg *prph_sc_ctrl;
+    /* MTL: segment list for fragmented PNVM (points into the raw PNVM file) */
+    const uint8_t *seg_data[IWX_MAX_DRAM_ENTRY];
+    size_t seg_size[IWX_MAX_DRAM_ENTRY];
+    int nsegs = 0;
     
     XYLog("Handling PNVM section\n");
     
@@ -1941,6 +1961,14 @@ iwx_pnvm_handle_section(struct iwx_softc *sc, const uint8_t *data, size_t len)
                 
                 size += data_len;
                 
+                if (nsegs >= IWX_MAX_DRAM_ENTRY) {
+                    err = -ERANGE;
+                    goto out;
+                }
+                seg_data[nsegs] = section->data;
+                seg_size[nsegs] = data_len;
+                nsegs++;
+                
                 break;
             }
             case IWX_UCODE_TLV_PNVM_SKU:
@@ -1976,6 +2004,21 @@ done:
     
     XYLog("loaded PNVM version %08x\n", sha1);
     
+    if (isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_FRAGMENTED_PNVM_IMG)) {
+        /* OpenBSD r1.230 iwx_pnvm_setup() / iwx_pnvm_setup_fragmented() */
+        err = iwx_pnvm_setup_fragmented(sc, seg_data, seg_size, nsegs);
+        if (err) {
+            XYLog("MTL: could not allocate DMA memory for fragmented PNVM (%d)\n", err);
+            err = -ENOMEM;
+            goto out;
+        }
+        iwx_ctxt_info_gen3_set_pnvm(sc);
+        sc->sc_pnvm_ver = sha1;
+        XYLog("MTL: PNVM loaded (fragmented): version 0x%08x, %d segments, %zu bytes, mac_type 0x%x rf_id 0x%x\n",
+              sha1, sc->pnvm_segs, sc->pnvm_size, mac_type, rf_id);
+        goto out;
+    }
+    
     prph_sc_ctrl = &((struct iwx_prph_scratch *)sc->prph_scratch_dma.vaddr)->ctrl_cfg;
     
     iwx_dma_contig_free(&sc->pnvm_dram);
@@ -1997,6 +2040,71 @@ out:
     ::free(pnvm_data);
     
     return err;
+}
+
+/*
+ * MTL: fragmented PNVM image, ported from OpenBSD r1.230
+ * iwx_pnvm_setup_fragmented(). The context-info PNVM base address points
+ * at an array of DMA addresses (struct iwx_pnvm_info_dram), one per
+ * SEC_RT payload of the selected SKU block.
+ */
+void ItlIwx::
+iwx_pnvm_dma_free(struct iwx_softc *sc)
+{
+    int i;
+    
+    for (i = 0; i < IWX_MAX_DRAM_ENTRY; i++)
+        iwx_dma_contig_free(&sc->pnvm_seg_dma[i]);
+    iwx_dma_contig_free(&sc->pnvm_dma);
+    sc->pnvm_size = 0;
+    sc->pnvm_segs = 0;
+}
+
+int ItlIwx::
+iwx_pnvm_setup_fragmented(struct iwx_softc *sc, const uint8_t **pnvm_data,
+                          size_t *pnvm_size, int pnvm_segs)
+{
+    struct iwx_pnvm_info_dram *pnvm_info;
+    int i, err;
+    
+    iwx_pnvm_dma_free(sc);
+    
+    err = iwx_dma_contig_alloc(sc->sc_dmat, &sc->pnvm_dma,
+                               sizeof(struct iwx_pnvm_info_dram), 0);
+    if (err)
+        return err;
+    pnvm_info = (struct iwx_pnvm_info_dram *)sc->pnvm_dma.vaddr;
+    
+    for (i = 0; i < pnvm_segs; i++) {
+        err = iwx_dma_contig_alloc(sc->sc_dmat, &sc->pnvm_seg_dma[i],
+                                   pnvm_size[i], 0);
+        if (err)
+            goto fail;
+        memcpy(sc->pnvm_seg_dma[i].vaddr, pnvm_data[i], pnvm_size[i]);
+        pnvm_info->pnvm_img[i] = htole64(sc->pnvm_seg_dma[i].paddr);
+        sc->pnvm_size += pnvm_size[i];
+        sc->pnvm_segs++;
+    }
+    
+    return 0;
+    
+fail:
+    iwx_pnvm_dma_free(sc);
+    return err;
+}
+
+/* Make AX210 firmware loading context point at PNVM image in DMA memory. */
+void ItlIwx::
+iwx_ctxt_info_gen3_set_pnvm(struct iwx_softc *sc)
+{
+    struct iwx_prph_scratch *prph_scratch;
+    struct iwx_prph_scratch_ctrl_cfg *prph_sc_ctrl;
+    
+    prph_scratch = (struct iwx_prph_scratch *)sc->prph_scratch_dma.vaddr;
+    prph_sc_ctrl = &prph_scratch->ctrl_cfg;
+    
+    prph_sc_ctrl->pnvm_cfg.pnvm_base_addr = htole64(sc->pnvm_dma.paddr);
+    prph_sc_ctrl->pnvm_cfg.pnvm_size = htole32(sc->pnvm_size);
 }
 
 int ItlIwx::
@@ -2081,9 +2189,12 @@ iwx_read_pnvm(struct iwx_softc *sc)
                 sc->sku_id[1] == le32toh(sku_id->data[1]) &&
                 sc->sku_id[2] == le32toh(sku_id->data[2])) {
 
+                XYLog("MTL: PNVM SKU block 0x%08x/0x%08x/0x%08x matches ALIVE sku_id\n",
+                      sc->sku_id[0], sc->sku_id[1], sc->sku_id[2]);
                 err = iwx_pnvm_handle_section(sc, data, len);
                 if (!err)
                     goto out;
+                XYLog("MTL: PNVM SKU block rejected (err %d), trying next\n", err);
             } else {
                 XYLog("SKU ID didn't match!\n");
             }
@@ -2094,6 +2205,8 @@ iwx_read_pnvm(struct iwx_softc *sc)
     }
     
     XYLog("PNVM parse done\n");
+    XYLog("MTL: no PNVM SKU block matched sku_id 0x%08x/0x%08x/0x%08x (%s)\n",
+          sc->sku_id[0], sc->sku_id[1], sc->sku_id[2], pnvm_name);
     
 out:
     OSSafeReleaseNULL(fwData);
@@ -2116,6 +2229,35 @@ iwx_load_pnvm(struct iwx_softc *sc)
     };
     
 out:
+    if (isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_FRAGMENTED_PNVM_IMG)) {
+        /*
+         * MTL: OpenBSD r1.230 iwx_load_pnvm(): kick the doorbell (also
+         * without PNVM data, firmware then proceeds without it) and wait
+         * for the PNVM_INIT_COMPLETE flag instead of a bare sleep, so a
+         * notification that arrives before we sleep is not lost.
+         */
+        const int wait_flags = IWX_PNVM_COMPLETE;
+        
+        if (!iwx_nic_lock(sc)) {
+            iwx_pnvm_free(&sc->sc_fw);
+            return EBUSY;
+        }
+        iwx_write_umac_prph(sc, IWX_UREG_DOORBELL_TO_ISR6,
+                            IWX_UREG_DOORBELL_TO_ISR6_PNVM);
+        err = 0;
+        while ((sc->sc_init_complete & wait_flags) != wait_flags) {
+            err = tsleep_nsec(&sc->sc_init_complete, 0, "iwxinit",
+                              SEC_TO_NSEC(2));
+            if (err)
+                break;
+        }
+        iwx_nic_unlock(sc);
+        XYLog("MTL: PNVM doorbell done, complete=%d err=%d (pnvm %zu bytes in %d segs)\n",
+              !!(sc->sc_init_complete & wait_flags), err, sc->pnvm_size, sc->pnvm_segs);
+        iwx_pnvm_free(&sc->sc_fw);
+        return err;
+    }
+    
     /* kick the doorbell */
     if (iwx_nic_lock(sc)) {
         iwx_write_umac_prph(sc, IWX_UREG_DOORBELL_TO_ISR6,
@@ -3223,6 +3365,7 @@ iwx_stop_device(struct iwx_softc *sc)
     iwx_dma_contig_free(&sc->prph_scratch_dma);
     iwx_dma_contig_free(&sc->iml_dma);
     iwx_dma_contig_free(&sc->pnvm_dram);
+    iwx_pnvm_dma_free(sc);
 }
 
 void ItlIwx::
@@ -3519,7 +3662,16 @@ iwx_post_alive(struct iwx_softc *sc)
 {
     
     XYLog("%s\n", __FUNCTION__);
+    int txcmd_ver;
+    
     iwx_ict_reset(sc);
+    
+    /* MTL (OpenBSD r1.230): TX response notif > 6 means rate_n_flags v2 */
+    txcmd_ver = iwx_lookup_notif_ver(sc, IWX_LONG_GROUP, IWX_TX_CMD);
+    if (txcmd_ver != IWX_FW_CMD_VER_UNKNOWN && txcmd_ver > 6)
+        sc->sc_rate_n_flags_version = 2;
+    else
+        sc->sc_rate_n_flags_version = 1;
     
     /*
      * Re-enable all the interrupts, including the RF-Kill one, now that
@@ -4873,7 +5025,19 @@ iwx_run_init_mvm_ucode(struct iwx_softc *sc, int readnvm)
 //        if (err)
 //            return err;
 //    }
-    err = tsleep_nsec(&sc->sc_init_complete, 0, "iwxinit", SEC_TO_NSEC(2));
+    if (CSR_HW_REV_TYPE(sc->sc_hw_rev) == IWL_CFG_MAC_TYPE_MA) {
+        /* MTL: OpenBSD-style wait loop; INIT_COMPLETE may already be here. */
+        err = 0;
+        while ((sc->sc_init_complete & wait_flags) != wait_flags) {
+            err = tsleep_nsec(&sc->sc_init_complete, 0, "iwxinit",
+                              SEC_TO_NSEC(2));
+            if (err)
+                break;
+        }
+        XYLog("MTL: INIT_COMPLETE %s (err %d)\n",
+              (sc->sc_init_complete & wait_flags) ? "received" : "MISSING", err);
+    } else
+        err = tsleep_nsec(&sc->sc_init_complete, 0, "iwxinit", SEC_TO_NSEC(2));
     if (err) {
         return err;
     }
@@ -4889,6 +5053,21 @@ iwx_run_init_mvm_ucode(struct iwx_softc *sc, int readnvm)
                 sc->sc_nvm.hw_addr);
         
     }
+    
+    /*
+     * MTL (OpenBSD r1.230): Only enable the MLD API on MA/BZ devices for
+     * now as the API 77 firmware on some of the older firmware devices
+     * also claims support, but doesn't actually work.
+     */
+    if (isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_MLD_API_SUPPORT) &&
+        CSR_HW_REV_TYPE(sc->sc_hw_rev) == IWL_CFG_MAC_TYPE_MA)
+        sc->sc_use_mld_api = 1;
+    else
+        sc->sc_use_mld_api = 0;
+    XYLog("MTL: MLD API %s (capa %d, mac type 0x%x)\n",
+          sc->sc_use_mld_api ? "ON" : "off",
+          isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_MLD_API_SUPPORT) ? 1 : 0,
+          CSR_HW_REV_TYPE(sc->sc_hw_rev));
     return 0;
 }
 
@@ -9971,6 +10150,15 @@ iwx_send_update_mcc_cmd(struct iwx_softc *sc, const char *alpha2)
     struct iwx_mcc_update_resp *resp;
     size_t resp_len;
     int err;
+    int resp_version;
+    
+    resp_version = iwx_lookup_notif_ver(sc, IWX_LONG_GROUP,
+                                        IWX_MCC_UPDATE_CMD);
+    if (resp_version != IWX_FW_CMD_VER_UNKNOWN && resp_version >= 8) {
+        XYLog("%s: unsupported MCC update command response "
+              "version %u\n", DEVNAME(sc), resp_version);
+        return ENOTSUP;
+    }
     
     memset(&mcc_cmd, 0, sizeof(mcc_cmd));
     mcc_cmd.mcc = htole16(alpha2[0] << 8 | alpha2[1]);
@@ -9994,6 +10182,32 @@ iwx_send_update_mcc_cmd(struct iwx_softc *sc, const char *alpha2)
     }
     
     resp_len = iwx_rx_packet_payload_len(pkt);
+    
+    if (isset(sc->sc_enabled_capa,
+              IWX_UCODE_TLV_CAPA_MCC_UPDATE_11AX_SUPPORT)) {
+        /* MTL (OpenBSD r1.230): LAR_UPDATE_MCC_CMD_RESP_S_VER_4 layout */
+        struct iwx_mcc_update_resp_v4 *resp4;
+        
+        if (resp_len < sizeof(*resp4)) {
+            XYLog("MTL: MCC_UPDATE resp v%d too short (%zu)\n", resp_version, resp_len);
+            err = EIO;
+            goto out;
+        }
+        resp4 = (struct iwx_mcc_update_resp_v4 *)pkt->data;
+        if (resp_len != sizeof(*resp4) +
+            resp4->n_channels * sizeof(resp4->channels[0])) {
+            XYLog("MTL: MCC_UPDATE resp v%d bad length %zu (n_channels %u)\n",
+                  resp_version, resp_len, le32toh(resp4->n_channels));
+            err = EIO;
+            goto out;
+        }
+        XYLog("MTL: MCC_UPDATE resp v%d status=0x%x mcc=0x%x cap=0x%x source_id=%u n_channels=%u\n",
+              resp_version, le32toh(resp4->status), le16toh(resp4->mcc), le16toh(resp4->cap),
+              resp4->source_id, le32toh(resp4->n_channels));
+        iwx_init_channel_map(sc, NULL, resp4->channels, resp4->n_channels);
+        goto out;
+    }
+    
     if (resp_len < sizeof(*resp)) {
         err = EIO;
         goto out;
@@ -10922,7 +11136,40 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
                 struct iwx_alive_resp_v5 *resp5;
                 
                 DPRINTF(("%s: firmware alive, size=%d\n", __FUNCTION__, iwx_rx_packet_payload_len(pkt)));
-                if (iwx_rx_packet_payload_len(pkt) == sizeof(*resp4)) {
+                int alive_ver = iwx_lookup_notif_ver(sc, IWX_LEGACY_GROUP, IWX_ALIVE);
+                if (alive_ver == 6 || alive_ver == 7) {
+                    /* MTL: UCODE_ALIVE_NTFY_API_S_VER_6/7 (OpenBSD r1.230) */
+                    struct iwx_alive_resp_v6 *resp6;
+                    sc->sc_uc.uc_ok = 0;
+                    SYNC_RESP_STRUCT(resp6, pkt, struct iwx_alive_resp_v6 *);
+                    if (iwx_rx_packet_payload_len(pkt) != sizeof(*resp6)) {
+                        XYLog("MTL: ALIVE v%d bad size %u (expected %zu)\n", alive_ver,
+                              iwx_rx_packet_payload_len(pkt), sizeof(*resp6));
+                        sc->sc_uc.uc_intr = 1;
+                        wakeupOn(&sc->sc_uc);
+                        break;
+                    }
+                    sc->sc_uc.uc_lmac_error_event_table[0] = le32toh(
+                        resp6->lmac_data[0].dbg_ptrs.error_event_table_ptr);
+                    sc->sc_uc.uc_lmac_error_event_table[1] = le32toh(
+                        resp6->lmac_data[1].dbg_ptrs.error_event_table_ptr);
+                    sc->sc_uc.uc_log_event_table = le32toh(
+                        resp6->lmac_data[0].dbg_ptrs.log_event_table_ptr);
+                    sc->sc_uc.uc_umac_error_event_table = le32toh(
+                        resp6->umac_data.dbg_ptrs.error_info_addr);
+                    sc->sku_id[0] = le32toh(resp6->sku_id.data[0]);
+                    sc->sku_id[1] = le32toh(resp6->sku_id.data[1]);
+                    sc->sku_id[2] = le32toh(resp6->sku_id.data[2]);
+                    if (le16toh(resp6->status) == IWX_ALIVE_STATUS_OK)
+                        sc->sc_uc.uc_ok = 1;
+                    XYLog("MTL: ALIVE v%d status 0x%04x (%s) flags 0x%x lmac %u.%u umac %u.%u sku_id 0x%08x/0x%08x/0x%08x imr en=%u\n",
+                          alive_ver, le16toh(resp6->status), sc->sc_uc.uc_ok ? "ok" : "FAIL",
+                          le16toh(resp6->flags),
+                          le32toh(resp6->lmac_data[0].ucode_major), le32toh(resp6->lmac_data[0].ucode_minor),
+                          le32toh(resp6->umac_data.umac_major), le32toh(resp6->umac_data.umac_minor),
+                          sc->sku_id[0], sc->sku_id[1], sc->sku_id[2],
+                          le32toh(resp6->imr.enabled));
+                } else if (iwx_rx_packet_payload_len(pkt) == sizeof(*resp4)) {
                     SYNC_RESP_STRUCT(resp4, pkt, struct iwx_alive_resp_v4 *);
                     sc->sc_uc.uc_lmac_error_event_table[0] = le32toh(
                                                                      resp4->lmac_data[0].dbg_ptrs.error_event_table_ptr);
@@ -11050,6 +11297,7 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
             }
                 
             case IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_PNVM_INIT_COMPLETE_NTFY):
+                sc->sc_init_complete |= IWX_PNVM_COMPLETE;
                 wakeupOn(&sc->sc_init_complete);
                 struct iwl_pnvm_init_complete_ntfy *pnvm_ntf;
                 SYNC_RESP_STRUCT(pnvm_ntf, pkt, struct iwl_pnvm_init_complete_ntfy *);

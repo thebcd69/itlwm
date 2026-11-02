@@ -8105,3 +8105,471 @@ do {   \
 #define IWX_BARRIER_READ_WRITE(sc)                    \
     bus_space_barrier((sc)->sc_st, (sc)->sc_sh, 0, (sc)->sc_sz,    \
         BUS_SPACE_BARRIER_READ | BUS_SPACE_BARRIER_WRITE)
+
+/*
+ * ===== Meteor Lake (MA) / MLD firmware API additions =====
+ * Ported from OpenBSD sys/dev/pci/if_iwxreg.h r1.230 for -83+ firmware
+ * (iwlwifi-ma-b0-gf-a0-89). Only used when the firmware advertises the
+ * corresponding command versions / sc_use_mld_api is set.
+ */
+#ifndef IWX_UCODE_TLV_CAPA_FRAGMENTED_PNVM_IMG
+#define IWX_UCODE_TLV_CAPA_FRAGMENTED_PNVM_IMG	32
+#endif
+#ifndef IWX_UCODE_TLV_CAPA_BAID_ML_SUPPORT
+#define IWX_UCODE_TLV_CAPA_BAID_ML_SUPPORT	63
+#endif
+#ifndef IWX_UCODE_TLV_CAPA_MCC_UPDATE_11AX_SUPPORT
+#define IWX_UCODE_TLV_CAPA_MCC_UPDATE_11AX_SUPPORT	89
+#endif
+#ifndef IWX_UCODE_TLV_CAPA_MLD_API_SUPPORT
+#define IWX_UCODE_TLV_CAPA_MLD_API_SUPPORT	110
+#endif
+#ifndef IWX_UCODE_TLV_FW_NUM_BEACONS
+#define IWX_UCODE_TLV_FW_NUM_BEACONS	258
+#endif
+
+/* command groups */
+#ifndef IWX_BT_COEX_GROUP
+#define IWX_BT_COEX_GROUP	0x9
+#endif
+#ifndef IWX_STATISTICS_GROUP
+#define IWX_STATISTICS_GROUP	0x10
+#endif
+
+/* SYSTEM_GROUP */
+#ifndef IWX_SYSTEM_STATISTICS_CMD
+#define IWX_SYSTEM_STATISTICS_CMD	0x0f
+#endif
+#ifndef IWX_SYSTEM_STATISTICS_END_NOTIF
+#define IWX_SYSTEM_STATISTICS_END_NOTIF 0xfd
+#endif
+
+/* MAC_CONF group (MLD API) */
+#define IWX_MAC_CONFIG_CMD		0x08
+#define IWX_LINK_CONFIG_CMD		0x09
+#define IWX_STA_CONFIG_CMD		0x0a
+#define IWX_STA_REMOVE_CMD		0x0c
+#ifndef IWX_MISSED_BEACONS_NOTIF
+#define IWX_MISSED_BEACONS_NOTIF	0xf6
+#endif
+#define IWX_CHANNEL_SWITCH_START_NOTIF	0xff
+
+/* DATA_PATH group */
+#define IWX_RLC_CONFIG_CMD	0x08
+#define IWX_RX_BAID_ALLOCATION_CONFIG_CMD	0x16
+#define IWX_SCD_QUEUE_CONFIG_CMD	0x17
+#define IWX_SEC_KEY_CMD		0x18
+#ifndef IWX_THERMAL_DUAL_CHAIN_REQUEST
+#define IWX_THERMAL_DUAL_CHAIN_REQUEST 0xf6
+#endif
+
+/* BT COEX group */
+#define IWX_PROFILE_NOTIF	0xff
+
+/* REGULATORY_AND_NVM group */
+#define IWX_PNVM_INIT_COMPLETE	0xfe
+
+/* STATISTICS group */
+#define IWX_STATISTICS_OPER_NOTIF	0x0
+#define IWX_STATISTICS_OPER_PART1_NOTIF	0x1
+#define IWX_STATISTICS_OPER_PART2_NOTIF	0x2
+#define IWX_STATISTICS_OPER_PART3_NOTIF	0x3
+#define IWX_STATISTICS_OPER_PART4_NOTIF	0x4
+
+/* Fragmented PNVM image (CAPA FRAGMENTED_PNVM_IMG) */
+struct iwx_pnvm_info_dram {
+	uint64_t pnvm_img[IWX_MAX_DRAM_ENTRY];
+} __packed;
+
+/* ALIVE notification v6/v7 */
+struct iwx_imr_alive_info {
+	uint64_t base_addr;
+	uint32_t size;
+	uint32_t enabled;
+} __packed; /* IMR_ALIVE_INFO_API_S_VER_1 */
+
+struct iwx_alive_resp_v6 {
+	uint16_t status;
+	uint16_t flags;
+	struct iwx_lmac_alive lmac_data[2];
+	struct iwx_umac_alive umac_data;
+	struct iwx_sku_id sku_id;
+	struct iwx_imr_alive_info imr;
+} __packed; /* UCODE_ALIVE_NTFY_API_S_VER_6 / VER_7 */
+
+/* MCC update response for CAPA MCC_UPDATE_11AX_SUPPORT (notif ver 5..7) */
+struct iwx_mcc_update_resp_v4 {
+	uint32_t status;
+	uint16_t mcc;
+	uint16_t cap;
+	uint16_t time;
+	uint16_t geo_info;
+	uint8_t source_id;
+	uint8_t reserved[3];
+	uint32_t n_channels;
+	uint32_t channels[];
+} __packed; /* LAR_UPDATE_MCC_CMD_RESP_S_VER_4 */
+
+/* UMAC scan request v17 */
+struct iwx_scan_channel_cfg_umac_v5 {
+	uint32_t flags;
+	uint8_t channel_num;
+	uint8_t psd_20;
+	uint8_t iter_count;
+	uint8_t iter_interval;
+} __packed; /* SCAN_CHANNEL_CONFIG_API_S_VER_5 */
+
+#define IWX_CHAN_CFG_FLAGS_BAND_POS 30
+
+struct iwx_scan_general_params_v11 {
+	uint16_t flags;
+	uint8_t reserved;
+	uint8_t scan_start_mac_or_link_id;
+	uint8_t active_dwell[IWX_SCAN_TWO_LMACS];
+	uint8_t adwell_default_2g;
+	uint8_t adwell_default_5g;
+	uint8_t adwell_default_social_chn;
+	uint8_t flags2;
+	uint16_t adwell_max_budget;
+	uint32_t max_out_of_time[IWX_SCAN_TWO_LMACS];
+	uint32_t suspend_time[IWX_SCAN_TWO_LMACS];
+	uint32_t scan_priority;
+	uint8_t passive_dwell[IWX_SCAN_TWO_LMACS];
+	uint8_t num_of_fragments[IWX_SCAN_TWO_LMACS];
+} __packed; /* SCAN_GENERAL_PARAMS_API_S_VER_12, *_VER_11  and *_VER_10 */
+
+struct iwx_scan_channel_params_v7 {
+	uint8_t flags;
+	uint8_t count;
+	uint8_t n_aps_override[2];
+	struct iwx_scan_channel_cfg_umac_v5 channel_config[67];
+} __packed; /* SCAN_CHANNEL_PARAMS_API_S_VER_7 */
+
+struct iwx_scan_req_params_v17 {
+	struct iwx_scan_general_params_v11 general_params;
+	struct iwx_scan_channel_params_v7 channel_params;
+	struct iwx_scan_periodic_parms_v1 periodic_params;
+	struct iwx_scan_probe_params_v4 probe_params;
+} __packed; /* SCAN_REQUEST_PARAMS_API_S_VER_17 - 14 */
+
+struct iwx_scan_req_umac_v17 {
+	uint32_t uid;
+	uint32_t ooc_priority;
+	struct iwx_scan_req_params_v17 scan_params;
+} __packed; /* SCAN_REQUEST_CMD_UMAC_API_S_VER_17 - 14 */
+
+/* MLD API: MAC / LINK / STA config */
+struct iwx_mac_client_data {
+	uint8_t is_assoc;
+	uint8_t esr_transition_timeout;
+	uint16_t medium_sync_delay;
+
+	uint16_t assoc_id;
+	uint16_t reserved1;
+	uint16_t data_policy;
+	uint16_t reserved2;
+	uint32_t ctwin;
+} __packed; /* MAC_CONTEXT_CONFIG_CLIENT_DATA_API_S_VER_2 */
+
+struct iwx_mac_p2p_dev_data {
+	uint32_t is_disc_extended;
+} __packed; /* MAC_CONTEXT_CONFIG_P2P_DEV_DATA_API_S_VER_1 */
+
+enum iwx_mac_config_filter_flags {
+	IWX_MAC_CFG_FILTER_PROMISC			= (1 << 0),
+	IWX_MAC_CFG_FILTER_ACCEPT_CONTROL_AND_MGMT	= (1 << 1),
+	IWX_MAC_CFG_FILTER_ACCEPT_GRP			= (1 << 2),
+	IWX_MAC_CFG_FILTER_ACCEPT_BEACON		= (1 << 3),
+	IWX_MAC_CFG_FILTER_ACCEPT_BCAST_PROBE_RESP	= (1 << 4),
+	IWX_MAC_CFG_FILTER_ACCEPT_PROBE_REQ		= (1 << 5),
+}; /* MAC_FILTER_FLAGS_MASK_E_VER_1 */
+
+struct iwx_mac_config_cmd {
+	/* COMMON_INDEX_HDR_API_S_VER_1 */
+	uint32_t id_and_color;
+	uint32_t action;
+	/* MAC_CONTEXT_TYPE_API_E */
+	uint32_t mac_type;
+	uint8_t local_mld_addr[6];
+	uint16_t reserved_for_local_mld_addr;
+	uint32_t filter_flags;
+	uint16_t he_support;
+	uint16_t he_ap_support;
+	uint32_t eht_support;
+	uint32_t nic_not_ack_enabled;
+	/* MAC_CONTEXT_CONFIG_SPECIFIC_DATA_API_U_VER_2 */
+	union {
+		struct iwx_mac_client_data client;
+		struct iwx_mac_p2p_dev_data p2p_dev;
+	};
+} __packed; /* MAC_CONTEXT_CONFIG_CMD_API_S_VER_2 */
+
+struct iwx_he_backoff_conf {
+	uint16_t cwmin;
+	uint16_t cwmax;
+	uint16_t aifsn;
+	uint16_t mu_time;
+} __packed; /* AC_QOS_DOT11AX_API_S */
+
+enum iwx_link_ctx_modify_flags {
+	IWX_LINK_CONTEXT_MODIFY_ACTIVE		= (1 << 0),
+	IWX_LINK_CONTEXT_MODIFY_RATES_INFO	= (1 << 1),
+	IWX_LINK_CONTEXT_MODIFY_PROTECT_FLAGS	= (1 << 2),
+	IWX_LINK_CONTEXT_MODIFY_QOS_PARAMS	= (1 << 3),
+	IWX_LINK_CONTEXT_MODIFY_BEACON_TIMING	= (1 << 4),
+	IWX_LINK_CONTEXT_MODIFY_HE_PARAMS	= (1 << 5),
+	IWX_LINK_CONTEXT_MODIFY_BSS_COLOR_DISABLE	= (1 << 6),
+	IWX_LINK_CONTEXT_MODIFY_EHT_PARAMS	= (1 << 7),
+	IWX_LINK_CONTEXT_MODIFY_ALL		= 0xff,
+}; /* LINK_CONTEXT_MODIFY_MASK_E_VER_1 */
+
+enum iwx_link_ctx_protection_flags {
+	IWX_LINK_PROT_FLG_TGG_PROTECT	= (1 << 0),
+	IWX_LINK_PROT_FLG_HT_PROT	= (1 << 1),
+	IWX_LINK_PROT_FLG_FAT_PROT	= (1 << 2),
+	IWX_LINK_PROT_FLG_SELF_CTS_EN	= (1 << 3),
+}; /* LINK_PROTECT_FLAGS_E_VER_1 */
+
+struct iwx_link_config_cmd {
+	uint32_t action;
+	uint32_t link_id;
+	uint32_t mac_id;
+	uint32_t phy_id;
+	uint8_t local_link_addr[6];
+	uint16_t reserved_for_local_link_addr;
+	uint32_t modify_mask;
+	uint32_t active;
+	uint32_t listen_lmac;
+	uint32_t cck_rates;
+	uint32_t ofdm_rates;
+	uint32_t cck_short_preamble;
+	uint32_t short_slot;
+	uint32_t protection_flags;
+	/* MAC_QOS_PARAM_API_S_VER_1 */
+	uint32_t qos_flags;
+	struct iwx_ac_qos ac[IWX_AC_NUM + 1];
+	uint8_t htc_trig_based_pkt_ext;
+	uint8_t rand_alloc_ecwmin;
+	uint8_t rand_alloc_ecwmax;
+	uint8_t ndp_fdbk_buff_th_exp;
+	struct iwx_he_backoff_conf trig_based_txf[IWX_AC_NUM];
+	uint32_t bi;
+	uint32_t dtim_interval;
+	uint16_t puncture_mask;
+	uint16_t frame_time_rts_th;
+	uint32_t flags;
+	uint32_t flags_mask;
+	/* The below fields are for multi-bssid */
+	uint8_t ref_bssid_addr[6];
+	uint16_t reserved_for_ref_bssid_addr;
+	uint8_t bssid_index;
+	uint8_t bss_color;
+	uint8_t spec_link_id;
+	uint8_t reserved;
+	uint8_t ibss_bssid_addr[6];
+	uint16_t reserved_for_ibss_bssid_addr;
+	uint32_t reserved1[8];
+} __packed; /* LINK_CONTEXT_CONFIG_CMD_API_S_VER_1 */
+
+#ifndef MAX_HE_SUPP_NSS
+#define MAX_HE_SUPP_NSS	2
+#endif
+#ifndef MAX_CHANNEL_BW_INDX_API_D_VER_3
+#define MAX_CHANNEL_BW_INDX_API_D_VER_3	5
+#endif
+
+struct iwx_he_pkt_ext_v2 {
+	uint8_t pkt_ext_qam_th[MAX_HE_SUPP_NSS][MAX_CHANNEL_BW_INDX_API_D_VER_3][2];
+} __packed; /* PKT_EXT_DOT11AX_API_S_VER_2 */
+
+struct iwx_mvm_sta_cfg_cmd {
+	uint32_t sta_id;
+	uint32_t link_id;
+	uint8_t peer_mld_address[6];
+	uint16_t reserved_for_peer_mld_address;
+	uint8_t peer_link_address[6];
+	uint16_t reserved_for_peer_link_address;
+	uint32_t station_type;
+	uint32_t assoc_id;
+	uint32_t beamform_flags;
+	uint32_t mfp;
+	uint32_t mimo;
+	uint32_t mimo_protection;
+	uint32_t ack_enabled;
+	uint32_t trig_rnd_alloc;
+	uint32_t tx_ampdu_spacing;
+	uint32_t tx_ampdu_max_size;
+	uint32_t sp_length;
+	uint32_t uapsd_acs;
+	struct iwx_he_pkt_ext_v2 pkt_ext;
+	uint32_t htc_flags;
+} __packed; /* STA_CMD_API_S_VER_1 */
+
+struct iwx_sta_cfg_cmd_v2 {
+	uint32_t sta_id;
+	uint32_t link_id;
+	uint8_t peer_mld_address[6];
+	uint16_t reserved_for_peer_mld_address;
+	uint8_t peer_link_address[6];
+	uint16_t reserved_for_peer_link_address;
+	uint32_t station_type;
+	uint32_t assoc_id;
+	uint32_t beamform_flags;
+	uint32_t mfp;
+	uint32_t mimo;
+	uint32_t mimo_protection;
+	uint32_t ack_enabled;
+	uint32_t trig_rnd_alloc;
+	uint32_t tx_ampdu_spacing;
+	uint32_t tx_ampdu_max_size;
+	uint32_t sp_length;
+	uint32_t uapsd_acs;
+	struct iwx_he_pkt_ext_v2 pkt_ext;
+	uint32_t htc_flags;
+	uint8_t use_ldpc_x2_cw;
+	uint8_t use_icf;
+	uint8_t dps_pad_time;
+	uint8_t dps_trans_delay;
+	uint8_t mic_prep_pad_delay;
+	uint8_t mic_compute_pad_delay;
+	uint8_t reserved[2];
+} __packed; /* STA_CMD_API_S_VER_2 */
+
+struct iwx_mvm_remove_sta_cmd {
+	uint32_t sta_id;
+} __packed; /* REMOVE_STA_API_S_VER_1 */
+
+/* RLC config v2 */
+struct iwx_rlc_properties {
+	uint32_t rx_chain_info;
+	uint32_t reserved;
+} __packed; /* RLC_PROPERTIES_S_VER_1 */
+
+struct iwx_sad_properties {
+	uint32_t chain_a_sad_mode;
+	uint32_t chain_b_sad_mode;
+	uint32_t mac_id;
+	uint32_t reserved;
+} __packed;
+
+struct iwx_rlc_config_cmd {
+	uint32_t phy_id;
+	struct iwx_rlc_properties rlc;
+	struct iwx_sad_properties sad;
+	uint8_t flags;
+	uint8_t reserved[3];
+} __packed; /* RLC_CONFIG_CMD_API_S_VER_2 */
+
+/* RX BAID allocation v2 */
+#define IWX_RX_BAID_ACTION_ADD		0
+#define IWX_RX_BAID_ACTION_MODIFY	1
+#define IWX_RX_BAID_ACTION_REMOVE	2
+
+struct iwx_rx_baid_cfg_cmd_alloc {
+	uint32_t sta_id_mask;
+	uint8_t tid;
+	uint8_t reserved[3];
+	uint16_t ssn;
+	uint16_t win_size;
+} __packed; /* RX_BAID_ALLOCATION_ADD_CMD_API_S_VER_1 */
+
+struct iwx_rx_baid_cfg_cmd_modify {
+	uint32_t old_sta_id_mask;
+	uint32_t new_sta_id_mask;
+	uint32_t tid;
+} __packed; /* RX_BAID_ALLOCATION_MODIFY_CMD_API_S_VER_2 */
+
+struct iwx_rx_baid_cfg_cmd_remove_v1 {
+	uint32_t baid;
+} __packed; /* RX_BAID_ALLOCATION_REMOVE_CMD_API_S_VER_1 */
+
+struct iwx_rx_baid_cfg_cmd_remove {
+	uint32_t sta_id_mask;
+	uint32_t tid;
+} __packed; /* RX_BAID_ALLOCATION_REMOVE_CMD_API_S_VER_2 */
+
+struct iwx_rx_baid_cfg_cmd {
+	uint32_t action;
+	union {
+		struct iwx_rx_baid_cfg_cmd_alloc alloc;
+		struct iwx_rx_baid_cfg_cmd_modify modify;
+		struct iwx_rx_baid_cfg_cmd_remove_v1 remove_v1;
+		struct iwx_rx_baid_cfg_cmd_remove remove;
+	}; /* RX_BAID_ALLOCATION_OPERATION_API_U_VER_2 */
+} __packed; /* RX_BAID_ALLOCATION_CONFIG_CMD_API_S_VER_2 */
+
+struct iwx_rx_baid_cfg_resp {
+	uint32_t baid;
+}; /* RX_BAID_ALLOCATION_RESPONSE_API_S_VER_1 */
+
+/* SCD queue config v3 */
+#define IWX_SCD_QUEUE_ADD	0
+#define IWX_SCD_QUEUE_REMOVE	1
+#define IWX_SCD_QUEUE_MODIFY	2
+
+struct iwx_scd_queue_cfg_cmd {
+	uint32_t operation;
+	union {
+		struct {
+			uint32_t sta_mask;
+			uint8_t tid;
+			uint8_t reserved[3];
+			uint32_t flags;
+			uint32_t cb_size;
+			uint64_t bc_dram_addr;
+			uint64_t tfdq_dram_addr;
+		} __packed add; /* TX_QUEUE_CFG_CMD_ADD_API_S_VER_1 */
+		struct {
+			uint32_t sta_mask;
+			uint32_t tid;
+		} __packed remove; /* TX_QUEUE_CFG_CMD_REMOVE_API_S_VER_1 */
+		struct {
+			uint32_t old_sta_mask;
+			uint32_t tid;
+			uint32_t new_sta_mask;
+		} __packed modify; /* TX_QUEUE_CFG_CMD_MODIFY_API_S_VER_1 */
+	} __packed u; /* TX_QUEUE_CFG_CMD_OPERATION_API_U_VER_1 */
+} __packed; /* TX_QUEUE_CFG_CMD_API_S_VER_3 */
+
+/* SEC_KEY_CMD v1 */
+enum iwx_sec_key_flags {
+	IWX_SEC_KEY_FLAG_CIPHER_MASK	= 0x07,
+	IWX_SEC_KEY_FLAG_CIPHER_WEP	= 0x01,
+	IWX_SEC_KEY_FLAG_CIPHER_CCMP	= 0x02,
+	IWX_SEC_KEY_FLAG_CIPHER_TKIP	= 0x03,
+	IWX_SEC_KEY_FLAG_CIPHER_GCMP	= 0x05,
+	IWX_SEC_KEY_FLAG_NO_TX		= 0x08,
+	IWX_SEC_KEY_FLAG_KEY_SIZE	= 0x10,
+	IWX_SEC_KEY_FLAG_MFP		= 0x20,
+	IWX_SEC_KEY_FLAG_MCAST_KEY	= 0x40,
+	IWX_SEC_KEY_FLAG_SPP_AMSDU	= 0x80,
+};
+
+#define IWX_SEC_WEP_KEY_OFFSET	3
+
+struct iwx_sec_key_cmd {
+	uint32_t action;
+	union {
+		struct {
+			uint32_t sta_mask;
+			uint32_t key_id;
+			uint32_t key_flags;
+			uint8_t key[32];
+			uint8_t tkip_mic_rx_key[8];
+			uint8_t tkip_mic_tx_key[8];
+			uint64_t rx_seq;
+			uint64_t tx_seq;
+		} __packed add; /* SEC_KEY_ADD_CMD_API_S_VER_1 */
+		struct {
+			uint32_t old_sta_mask;
+			uint32_t new_sta_mask;
+			uint32_t key_id;
+			uint32_t key_flags;
+		} __packed modify; /* SEC_KEY_MODIFY_CMD_API_S_VER_1 */
+		struct {
+			uint32_t sta_mask;
+			uint32_t key_id;
+			uint32_t key_flags;
+		} __packed remove; /* SEC_KEY_REMOVE_CMD_API_S_VER_1 */
+	} __packed u; /* SEC_KEY_OPERATION_API_U_VER_1 */
+} __packed; /* SEC_KEY_CMD_API_S_VER_1 */
