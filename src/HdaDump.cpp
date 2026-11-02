@@ -15,7 +15,8 @@ static inline void wr16(volatile uint8_t *b, uint32_t o, uint16_t v) { *(volatil
 bool HdaDump::init() {
     OSDictionary *m = IOService::nameMatching("HDEF");
     if (!m) return false;
-    IOService *s = IOService::waitForMatchingService(m, 2ULL * 1000 * 1000 * 1000);
+    IOService *s = IOService::waitForMatchingService(m, 2ULL * 1000 * 1000 * 1000);   // +1, m not consumed
+    m->release();
     dev = OSDynamicCast(IOPCIDevice, s);
     if (!dev) { if (s) s->release(); CS_LOG("HDA: HDEF not found"); return false; }
     uint16_t vid = dev->configRead16(kIOPCIConfigVendorID), did = dev->configRead16(kIOPCIConfigDeviceID);

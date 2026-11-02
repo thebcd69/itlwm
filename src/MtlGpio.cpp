@@ -37,7 +37,8 @@ bool MtlGpio::init() {
     for (int i = 0; i < 2 && !dev; i++) {
         OSDictionary *m = IOService::nameMatching(hids[i]);
         if (!m) continue;
-        IOService *s = IOService::waitForMatchingService(m, 5ULL * 1000 * 1000 * 1000);  // consumes m
+        IOService *s = IOService::waitForMatchingService(m, 5ULL * 1000 * 1000 * 1000);  // does not consume m; returns +1
+        m->release();
         if (s) { dev = s; CS_LOG("GPIO: found %s (%s)", hids[i], s->getName()); }
     }
     if (!dev) { CS_LOG("GPIO: INTC1083 ACPI device not found"); return false; }
