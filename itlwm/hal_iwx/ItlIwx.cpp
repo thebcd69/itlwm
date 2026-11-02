@@ -7740,11 +7740,23 @@ iwx_config_umac_scan(struct iwx_softc *sc)
     scan_config->tx_chains = htole32(iwx_fw_valid_tx_ant(sc));
     scan_config->rx_chains = htole32(iwx_fw_valid_rx_ant(sc));
     
+    if (sc->sc_use_mld_api) {
+        /*
+         * MTL (OpenBSD r1.230 iwx_config_umac_scan_reduced):
+         * SCAN_CFG version >= 5 implies that the broadcast
+         * STA ID field is deprecated.
+         */
+        cmdver = iwx_lookup_cmd_ver(sc, IWX_LONG_GROUP, IWX_SCAN_CFG_CMD);
+        if (cmdver == IWX_FW_CMD_VER_UNKNOWN || cmdver < 5)
+            scan_config->bcast_sta_id = 0xff;
+        XYLog("MTL: SCAN_CFG v%d bcast_sta_id 0x%x\n", cmdver, scan_config->bcast_sta_id);
+    } else {
     cmdver = iwx_lookup_cmd_ver(sc, IWX_LONG_GROUP, IWX_ADD_STA);
     if (cmdver == IWX_FW_CMD_VER_UNKNOWN || cmdver < 12)
         scan_config->bcast_sta_id = IWX_AUX_STA_ID;
     else if (cmdver == IWX_FW_CMD_VER_UNKNOWN || cmdver < 5)
         scan_config->bcast_sta_id = 0xFF;
+    }
     
     hcmd.data[0] = scan_config;
     hcmd.len[0] = cmd_size;
@@ -7846,6 +7858,8 @@ iwx_umac_scan_size(struct iwx_softc *sc)
         return sizeof(iwx_scan_req_umac_v12);
     else if (scan_ver == 14)
         return sizeof(iwx_scan_req_umac_v14);
+    else if (scan_ver == 17)
+        return sizeof(struct iwx_scan_req_umac_v17);
     
     if (isset(sc->sc_ucode_api, IWX_UCODE_TLV_API_ADAPTIVE_DWELL_V2))
         base_size = IWX_SCAN_REQ_UMAC_SIZE_V8;
@@ -7940,6 +7954,12 @@ iwx_umac_scan(struct iwx_softc *sc, int bgscan)
     const uint32_t timeout = bgscan ?  htole32(120) : htole32(0);
     uint8_t scan_ver = iwx_lookup_cmd_ver(sc, IWX_LONG_GROUP, IWX_SCAN_REQ_UMAC);
     
+    if (scan_ver == 17) {
+        err = iwx_umac_scan_v17(sc, bgscan);
+        XYLog("MTL: SCAN_REQ_UMAC v17 (%s, essid len %d) -> %d\n",
+              bgscan ? "bgscan" : "scan", ic->ic_des_esslen, err);
+        return err;
+    }
     if (scan_ver == 12)
         return iwx_umac_scan_v12(sc, bgscan);
     else if (scan_ver == 14)
@@ -8286,6 +8306,170 @@ iwx_umac_scan_v14(struct iwx_softc *sc, int bgscan)
     
     err = iwx_send_cmd(sc, &hcmd);
     ::free(req);
+    return err;
+}
+
+/*
+ * MTL: UMAC scan request version 17 (-77+ firmware), ported from
+ * OpenBSD r1.230 iwx_umac_scan_v17() and helpers.
+ */
+uint8_t ItlIwx::
+iwx_umac_scan_fill_channels_v5(struct iwx_softc *sc,
+                               struct iwx_scan_channel_cfg_umac_v5 *chan, size_t chan_nitems,
+                               int n_ssids, uint32_t channel_cfg_flags)
+{
+    struct ieee80211com *ic = &sc->sc_ic;
+    struct ieee80211_channel *c;
+    uint8_t nchan;
+    
+    for (nchan = 0, c = &ic->ic_channels[1];
+         c <= &ic->ic_channels[IEEE80211_CHAN_MAX] &&
+         nchan < chan_nitems &&
+         nchan < sc->sc_capa_n_scan_channels;
+         c++) {
+        uint8_t channel_num, band;
+        
+        if (c->ic_flags == 0)
+            continue;
+        
+        channel_num = ieee80211_mhz2ieee(c->ic_freq, 0);
+        if (IEEE80211_IS_CHAN_2GHZ(c))
+            band = IWX_PHY_BAND_24;
+        else
+            band = IWX_PHY_BAND_5;
+        
+        chan->channel_num = channel_num;
+        chan->psd_20 = (uint8_t)-128;
+        chan->iter_count = 1;
+        chan->iter_interval = 0;
+        
+        chan->flags = htole32(channel_cfg_flags |
+                              (band << IWX_CHAN_CFG_FLAGS_BAND_POS));
+        chan++;
+        nchan++;
+    }
+    
+    return nchan;
+}
+
+void ItlIwx::
+iwx_scan_umac_fill_general_p_v11(struct iwx_softc *sc,
+                                 struct iwx_scan_general_params_v11 *gp, uint16_t gen_flags, int bgscan)
+{
+    uint32_t suspend_time, max_out_time;
+    
+    /* iwx_scan_umac_dwell_v11() */
+    gp->adwell_default_social_chn = IWX_SCAN_ADWELL_DEFAULT_N_APS_SOCIAL;
+    gp->adwell_default_2g = IWX_SCAN_ADWELL_DEFAULT_LB_N_APS;
+    gp->adwell_default_5g = IWX_SCAN_ADWELL_DEFAULT_HB_N_APS;
+    
+    if (bgscan)
+        gp->adwell_max_budget =
+            htole16(IWX_SCAN_ADWELL_MAX_BUDGET_DIRECTED_SCAN);
+    else
+        gp->adwell_max_budget =
+            htole16(IWX_SCAN_ADWELL_MAX_BUDGET_FULL_SCAN);
+    
+    gp->scan_priority = htole32(IWX_SCAN_PRIORITY_EXT_6);
+    if (bgscan) {
+        max_out_time = 120;
+        suspend_time = 120;
+    } else {
+        max_out_time = 0;
+        suspend_time = 0;
+    }
+    gp->max_out_of_time[IWX_SCAN_LB_LMAC_IDX] = htole32(max_out_time);
+    gp->suspend_time[IWX_SCAN_LB_LMAC_IDX] = htole32(suspend_time);
+    gp->max_out_of_time[IWX_SCAN_HB_LMAC_IDX] = htole32(max_out_time);
+    gp->suspend_time[IWX_SCAN_HB_LMAC_IDX] = htole32(suspend_time);
+    
+    gp->active_dwell[IWX_SCAN_LB_LMAC_IDX] = IWL_SCAN_DWELL_ACTIVE;
+    gp->passive_dwell[IWX_SCAN_LB_LMAC_IDX] = IWL_SCAN_DWELL_PASSIVE;
+    gp->active_dwell[IWX_SCAN_HB_LMAC_IDX] = IWL_SCAN_DWELL_ACTIVE;
+    gp->passive_dwell[IWX_SCAN_HB_LMAC_IDX] = IWL_SCAN_DWELL_PASSIVE;
+    
+    gp->flags = htole16(gen_flags);
+    gp->scan_start_mac_or_link_id = 0;
+    
+    if (gen_flags & IWX_UMAC_SCAN_GEN_FLAGS_V2_FRAGMENTED_LMAC1)
+        gp->num_of_fragments[IWX_SCAN_LB_LMAC_IDX] = 3;
+    if (gen_flags & IWX_UMAC_SCAN_GEN_FLAGS_V2_FRAGMENTED_LMAC2)
+        gp->num_of_fragments[IWX_SCAN_HB_LMAC_IDX] = 3;
+}
+
+int ItlIwx::
+iwx_umac_scan_v17(struct iwx_softc *sc, int bgscan)
+{
+    struct ieee80211com *ic = &sc->sc_ic;
+    struct iwx_host_cmd hcmd = {
+        .id = iwx_cmd_id(IWX_SCAN_REQ_UMAC, IWX_LONG_GROUP, 0),
+        .len = { 0, },
+        .data = { NULL, },
+        .flags = 0,
+    };
+    struct iwx_scan_req_umac_v17 *cmd;
+    struct iwx_scan_req_params_v17 *scan_p;
+    struct iwx_scan_channel_params_v7 *cp;
+    int err, async = bgscan, n_ssid = 0;
+    uint16_t gen_flags;
+    uint32_t bitmap_ssid = 0;
+    
+    cmd = (struct iwx_scan_req_umac_v17 *)malloc(sizeof(*cmd), 0,
+                                                 (async ? M_NOWAIT : M_WAITOK) | M_ZERO);
+    if (cmd == NULL)
+        return ENOMEM;
+    
+    scan_p = &cmd->scan_params;
+    
+    cmd->ooc_priority = htole32(IWX_SCAN_PRIORITY_EXT_6);
+    cmd->uid = htole32(0);
+    
+    /* iwx_scan_umac_flags_v2() */
+    gen_flags = 0;
+    if (ic->ic_des_esslen == 0)
+        gen_flags |= IWX_UMAC_SCAN_GEN_FLAGS_V2_FORCE_PASSIVE;
+    gen_flags |= IWX_UMAC_SCAN_GEN_FLAGS_V2_PASS_ALL;
+    gen_flags |= IWX_UMAC_SCAN_GEN_FLAGS_V2_NTFY_ITER_COMPLETE;
+    gen_flags |= IWX_UMAC_SCAN_GEN_FLAGS_V2_ADAPTIVE_DWELL;
+    
+    iwx_scan_umac_fill_general_p_v11(sc, &scan_p->general_params,
+                                     gen_flags, bgscan);
+    
+    scan_p->periodic_params.schedule[0].interval = htole16(0);
+    scan_p->periodic_params.schedule[0].iter_count = 1;
+    
+    err = iwx_fill_probe_req(sc, &scan_p->probe_params.preq);
+    if (err) {
+        ::free(cmd);
+        return err;
+    }
+    
+    if (ic->ic_des_esslen != 0) {
+        scan_p->probe_params.direct_scan[0].id = IEEE80211_ELEMID_SSID;
+        scan_p->probe_params.direct_scan[0].len = ic->ic_des_esslen;
+        memcpy(scan_p->probe_params.direct_scan[0].ssid,
+               ic->ic_des_essid, ic->ic_des_esslen);
+        bitmap_ssid |= (1 << 0);
+        n_ssid = 1;
+    }
+    
+    /* iwx_scan_umac_fill_ch_p_v7() */
+    cp = &scan_p->channel_params;
+    cp->flags = IWX_SCAN_CHANNEL_FLAG_ENABLE_CHAN_ORDER;
+    cp->count = iwx_umac_scan_fill_channels_v5(sc, cp->channel_config,
+                                               nitems(cp->channel_config), n_ssid, bitmap_ssid);
+    cp->n_aps_override[0] = IWX_SCAN_ADWELL_N_APS_GO_FRIENDLY;
+    cp->n_aps_override[1] = IWX_SCAN_ADWELL_N_APS_SOCIAL_CHS;
+    
+    XYLog("MTL: scan v17 gen_flags 0x%x channels %u (fw max %d) n_ssid %d\n",
+          gen_flags, cp->count, sc->sc_capa_n_scan_channels, n_ssid);
+    
+    hcmd.len[0] = sizeof(*cmd);
+    hcmd.data[0] = (void *)cmd;
+    hcmd.flags |= async ? IWX_CMD_ASYNC : 0;
+    
+    err = iwx_send_cmd(sc, &hcmd);
+    ::free(cmd);
     return err;
 }
 
@@ -10284,6 +10468,8 @@ iwx_init_hw(struct iwx_softc *sc)
         return EBUSY;
     
     err = iwx_send_tx_ant_cfg(sc, iwx_fw_valid_tx_ant(sc));
+    if (sc->sc_use_mld_api)
+        XYLog("MTL: init TX_ANT_CONFIGURATION(0x%x) -> %d\n", iwx_fw_valid_tx_ant(sc), err);
     if (err) {
         XYLog("%s: could not init tx ant config (error %d)\n",
                DEVNAME(sc), err);
@@ -10302,6 +10488,8 @@ iwx_init_hw(struct iwx_softc *sc)
     }
     
     err = iwx_send_bt_init_conf(sc);
+    if (sc->sc_use_mld_api)
+        XYLog("MTL: init BT_CONFIG -> %d\n", err);
     if (err) {
         XYLog("%s: could not init bt coex (error %d)\n",
                DEVNAME(sc), err);
@@ -10309,15 +10497,33 @@ iwx_init_hw(struct iwx_softc *sc)
     }
     
     err = iwx_send_soc_conf(sc);
+    if (sc->sc_use_mld_api)
+        XYLog("MTL: init SOC_CONFIGURATION(integrated %d ltr %d xtal %d low_lat %d) -> %d\n",
+              sc->sc_integrated, sc->sc_ltr_delay, sc->sc_xtal_latency,
+              sc->sc_low_latency_xtal, err);
     if (err)
         return err;
     
     if (isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_DQA_SUPPORT)){
         err = iwx_send_dqa_cmd(sc);
+        if (sc->sc_use_mld_api)
+            XYLog("MTL: init DQA_ENABLE -> %d\n", err);
         if (err)
             return err;
     }
     
+    if (sc->sc_use_mld_api) {
+        /*
+         * MTL (OpenBSD r1.230 iwx_init_hw): MLD firmware has no ADD_STA,
+         * the UMAC scan needs no aux station, and PHY contexts are added
+         * in iwx_auth() and removed in iwx_deauth().
+         */
+        for (i = 0; i < IWX_NUM_PHY_CTX; i++) {
+            sc->sc_phyctxt[i].id = i;
+            sc->sc_phyctxt[i].channel = &ic->ic_channels[1];
+        }
+        sc->sc_flags &= ~IWX_FLAG_PHY_ACTIVE;
+    } else {
     /* Add auxiliary station for scanning */
     err = iwx_add_aux_sta(sc);
     if (err) {
@@ -10342,6 +10548,7 @@ iwx_init_hw(struct iwx_softc *sc)
             goto err;
         }
     }
+    }
     
     if (!isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_SET_LTR_GEN2)) {
         err = iwx_config_ltr(sc);
@@ -10353,11 +10560,15 @@ iwx_init_hw(struct iwx_softc *sc)
     
     if (isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_CT_KILL_BY_FW)) {
         err = iwx_send_temp_report_ths_cmd(sc);
+        if (sc->sc_use_mld_api)
+            XYLog("MTL: init TEMP_REPORTING_THRESHOLDS -> %d\n", err);
         if (err)
             goto err;
     }
     
     err = iwx_power_update_device(sc);
+    if (sc->sc_use_mld_api)
+        XYLog("MTL: init POWER_TABLE -> %d\n", err);
     if (err) {
         XYLog("%s: could not send power command (error %d)\n",
                DEVNAME(sc), err);
@@ -10366,14 +10577,19 @@ iwx_init_hw(struct iwx_softc *sc)
     
     if (sc->sc_nvm.lar_enabled) {
         err = iwx_send_update_mcc_cmd(sc, "ZZ");
+        if (sc->sc_use_mld_api)
+            XYLog("MTL: init MCC_UPDATE(ZZ) -> %d\n", err);
         if (err) {
             XYLog("%s: could not init LAR (error %d)\n",
                    DEVNAME(sc), err);
             goto err;
         }
-    }
+    } else if (sc->sc_use_mld_api)
+        XYLog("MTL: LAR disabled in NVM, no MCC_UPDATE\n");
     
     err = iwx_config_umac_scan(sc);
+    if (sc->sc_use_mld_api)
+        XYLog("MTL: init SCAN_CFG -> %d\n", err);
     if (err) {
         XYLog("%s: could not configure scan (error %d)\n",
                DEVNAME(sc), err);
@@ -10381,6 +10597,8 @@ iwx_init_hw(struct iwx_softc *sc)
     }
     
     err = iwx_disable_beacon_filter(sc);
+    if (sc->sc_use_mld_api)
+        XYLog("MTL: init BEACON_FILTERING(off) -> %d\n", err);
     if (err) {
         XYLog("%s: could not disable beacon filter (error %d)\n",
                DEVNAME(sc), err);
@@ -11245,6 +11463,22 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
                 break;
             }
                 
+            /* MTL: MLD API command responses (OpenBSD r1.230) */
+            case IWX_WIDE_ID(IWX_DATA_PATH_GROUP,
+                IWX_SCD_QUEUE_CONFIG_CMD):
+            case IWX_WIDE_ID(IWX_DATA_PATH_GROUP,
+                IWX_RX_BAID_ALLOCATION_CONFIG_CMD):
+            case IWX_WIDE_ID(IWX_DATA_PATH_GROUP,
+                IWX_SEC_KEY_CMD):
+            case IWX_WIDE_ID(IWX_MAC_CONF_GROUP,
+                IWX_MAC_CONFIG_CMD):
+            case IWX_WIDE_ID(IWX_MAC_CONF_GROUP,
+                IWX_LINK_CONFIG_CMD):
+            case IWX_WIDE_ID(IWX_MAC_CONF_GROUP,
+                IWX_STA_CONFIG_CMD):
+            case IWX_WIDE_ID(IWX_MAC_CONF_GROUP,
+                IWX_STA_REMOVE_CMD):
+            case IWX_MGMT_MCAST_KEY:
             case IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP,
                 IWX_NVM_GET_INFO):
             case IWX_ADD_STA_KEY:
@@ -11312,6 +11546,10 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
             case IWX_SCAN_COMPLETE_UMAC: {
                 struct iwx_umac_scan_complete *notif;
                 SYNC_RESP_STRUCT(notif, pkt, struct iwx_umac_scan_complete *);
+                if (sc->sc_use_mld_api)
+                    XYLog("MTL: SCAN_COMPLETE_UMAC status %u ebs %u last_sched %u time_from_last %u, %d nodes in net80211 table\n",
+                          notif->status, notif->ebs_status, notif->last_schedule,
+                          le32toh(notif->time_from_last_iter), sc->sc_ic.ic_nnodes);
                 iwx_endscan(sc);
                 break;
             }
@@ -11319,9 +11557,43 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
             case IWX_SCAN_ITERATION_COMPLETE_UMAC: {
                 struct iwx_umac_scan_iter_complete_notif *notif;
                 SYNC_RESP_STRUCT(notif, pkt, struct iwx_umac_scan_iter_complete_notif *);
+                if (sc->sc_use_mld_api)
+                    XYLog("MTL: SCAN_ITERATION_COMPLETE_UMAC status %u scanned_channels %u, %d nodes in net80211 table\n",
+                          notif->status, notif->scanned_channels, sc->sc_ic.ic_nnodes);
                 iwx_endscan(sc);
                 break;
             }
+                
+            /* MTL: notifications of newer (-77+) firmware, OpenBSD r1.230 */
+            case IWX_WIDE_ID(IWX_MAC_CONF_GROUP, IWX_MISSED_BEACONS_NOTIF):
+                iwx_rx_bmiss(sc, pkt, data);
+                break;
+                
+            case IWX_WIDE_ID(IWX_MAC_CONF_GROUP,
+                IWX_CHANNEL_SWITCH_START_NOTIF): {
+                if (sc->sc_ic.ic_opmode != IEEE80211_M_STA ||
+                    sc->sc_ic.ic_state != IEEE80211_S_RUN)
+                    break;
+                XYLog("MTL: firmware channel switch notification 0x%x\n", code);
+                if ((sc->sc_flags & IWX_FLAG_SHUTDOWN) == 0)
+                    task_add(systq, &sc->init_task);
+                break;
+            }
+                
+            case IWX_WIDE_ID(IWX_DATA_PATH_GROUP, IWX_RLC_CONFIG_CMD):
+            case IWX_WIDE_ID(IWX_DATA_PATH_GROUP,
+                IWX_THERMAL_DUAL_CHAIN_REQUEST):
+            case IWX_WIDE_ID(IWX_DATA_PATH_GROUP, 0xf8):
+            case IWX_WIDE_ID(IWX_SYSTEM_GROUP, 0xfc):
+            case IWX_WIDE_ID(IWX_SYSTEM_GROUP, IWX_SYSTEM_STATISTICS_CMD):
+            case IWX_WIDE_ID(IWX_SYSTEM_GROUP,
+                IWX_SYSTEM_STATISTICS_END_NOTIF):
+            case IWX_WIDE_ID(IWX_STATISTICS_GROUP,
+                IWX_STATISTICS_OPER_NOTIF):
+            case IWX_WIDE_ID(IWX_STATISTICS_GROUP,
+                IWX_STATISTICS_OPER_PART1_NOTIF):
+            case IWX_WIDE_ID(IWX_BT_COEX_GROUP, IWX_PROFILE_NOTIF):
+                break;
                 
             case IWX_MCC_CHUB_UPDATE_CMD: {
                 struct iwx_mcc_chub_notif *notif;

@@ -84,28 +84,28 @@ Status: `ok` = itlwm already equivalent, `todo`, `done` = ported (compiled, unte
 | # | Requirement | OpenBSD | itlwm | Prio | Status |
 |---|---|---|---|---|---|
 | A1 | MA attach config: integrated=1, ltr NONE, low_latency_xtal=0, xtal_latency=0, uhb=1, AX210 family | attach `PCI_PRODUCT_INTEL_WL_22500_14` ~12514 | `iwl_ma_trans_cfg` + `iwl_cfg_ma_b0_gf_a0` (dev-info table, last match wins) | P0 | ok (values already identical) |
-| A2 | Firmware TLV parse: unknown TLVs (0x39,0x3a,0x3c,0x3d,0x44,0x45,0x100-0x102,0x100000b/c) must not abort | `iwx_read_firmware` 1199 (default → EINVAL, but lists all of them) | `iwx_read_firmware` 1371 (default just logs) | P0 | ok; add MTL log of fw name/version/API/MLD capa |
+| A2 | Firmware TLV parse: unknown TLVs (0x39,0x3a,0x3c,0x3d,0x44,0x45,0x100-0x102,0x100000b/c) must not abort | `iwx_read_firmware` 1199 (default → EINVAL, but lists all of them) | `iwx_read_firmware` 1371 (default just logs) | P0 | ok + MTL log + quiet cases |
 | A3 | IML TLV (13944 B) stored and handed to context info | 1585, `iwx_ctxt_info_gen3_init` 991 | `sc_iml[20480]`, `iwx_ctxt_info_gen3_init` 1107 | P0 | ok |
 | A4 | Paging / SEC_RT (60 sections) / FW_MEM_SEG / FSEQ | `iwx_init_fw_sec` 638 | `iwx_init_fw_sec` 761 | P0 | ok (same code) |
-| A5 | ALIVE notif v6 (v5 + IMR info): status, error tables, **SKU id** | `iwx_rx_pkt` IWX_ALIVE 10995 (by notif version) | `iwx_rx_pkt` IWX_ALIVE (by size; v6 falls into v5 branch by luck) | P0 | todo: explicit v6 handling + log |
+| A5 | ALIVE notif v6 (v5 + IMR info): status, error tables, **SKU id** | `iwx_rx_pkt` IWX_ALIVE 10995 (by notif version) | `iwx_rx_pkt` IWX_ALIVE (by size; v6 falls into v5 branch by luck) | P0 | done (untested) |
 | A6 | PNVM: pick SKU block matching ALIVE sku_id, collect SEC_RT payloads | `iwx_pnvm_parse` 4310, `iwx_pnvm_handle_section` 4194 | `iwx_read_pnvm` 2003, `iwx_pnvm_handle_section` 1846 | P0 | ok for selection; see A7 |
-| A7 | **Fragmented PNVM** (CAPA 32 `FRAGMENTED_PNVM_IMG` is set in -89): base addr must point to `iwx_pnvm_info_dram` (array of segment addrs) | `iwx_pnvm_setup_fragmented` 4130, `iwx_ctxt_info_gen3_set_pnvm` 4349 | concatenates segments into one blob | P0 | todo |
-| A8 | PNVM doorbell + wait for `PNVM_INIT_COMPLETE` flag | `iwx_load_pnvm` 4376 | `iwx_load_pnvm` 2105 (single tsleep, no flag) | P0 | todo |
+| A7 | **Fragmented PNVM** (CAPA 32 `FRAGMENTED_PNVM_IMG` is set in -89): base addr must point to `iwx_pnvm_info_dram` (array of segment addrs) | `iwx_pnvm_setup_fragmented` 4130, `iwx_ctxt_info_gen3_set_pnvm` 4349 | concatenates segments into one blob | P0 | done (untested) |
+| A8 | PNVM doorbell + wait for `PNVM_INIT_COMPLETE` flag | `iwx_load_pnvm` 4376 | `iwx_load_pnvm` 2105 (single tsleep, no flag) | P0 | done (untested) |
 | A9 | NVM_GET_INFO rsp v4 (API REGULATORY_NVM_INFO) | `iwx_nvm_get` 3978 | `iwx_nvm_get` 4585 | P0 | ok (identical) |
-| A10 | MLD API switch: CAPA 110 && (MAC type MA or BZ) → `sc_use_mld_api` | `iwx_run_init_mvm_ucode` 4576 | missing | P0 | todo |
-| A11 | init_hw: tx-ant, (phy cfg), BT, SOC v2, DQA, LTR, CT-kill, power, MCC, scan cfg, beacon filter off. **No aux STA, no PHY ctxt at init** | `iwx_init_hw` 10094 | `iwx_init_hw` 10049 (adds aux STA via ADD_STA and 3 PHY ctxts) | P0 | todo: skip aux STA + PHY add when MLD |
-| A12 | MCC_UPDATE rsp v6 → use `iwx_mcc_update_resp_v4` when CAPA 89 (MCC_UPDATE_11AX) is set; reject resp ver ≥ 8 | `iwx_send_update_mcc_cmd` 9972 | `iwx_send_update_mcc_cmd` 9961 (old struct only → EIO → init fails) | P0 | todo |
-| A13 | SCAN_CFG reduced: bcast_sta_id=0xff only if SCAN_CFG ver < 5 / unknown | `iwx_config_umac_scan_reduced` 7473 | `iwx_config_umac_scan` 7540 (keys off ADD_STA ver → AUX_STA_ID) | P1 | todo (MLD-gated) |
+| A10 | MLD API switch: CAPA 110 && (MAC type MA or BZ) → `sc_use_mld_api` | `iwx_run_init_mvm_ucode` 4576 | missing | P0 | done (untested) |
+| A11 | init_hw: tx-ant, (phy cfg), BT, SOC v2, DQA, LTR, CT-kill, power, MCC, scan cfg, beacon filter off. **No aux STA, no PHY ctxt at init** | `iwx_init_hw` 10094 | `iwx_init_hw` 10049 (adds aux STA via ADD_STA and 3 PHY ctxts) | P0 | done (untested) |
+| A12 | MCC_UPDATE rsp v6 → use `iwx_mcc_update_resp_v4` when CAPA 89 (MCC_UPDATE_11AX) is set; reject resp ver ≥ 8 | `iwx_send_update_mcc_cmd` 9972 | `iwx_send_update_mcc_cmd` 9961 (old struct only → EIO → init fails) | P0 | done (untested) |
+| A13 | SCAN_CFG reduced: bcast_sta_id=0xff only if SCAN_CFG ver < 5 / unknown | `iwx_config_umac_scan_reduced` 7473 | `iwx_config_umac_scan` 7540 (keys off ADD_STA ver → AUX_STA_ID) | P1 | done (untested) |
 | A14 | rate_n_flags version from TX_CMD notif ver (>6 → v2) | `iwx_post_alive` 3062 | n/a (tx_fill_cmd keys off TX cmd ver > 8, equivalent for mgmt) | P1 | partial, see D |
-| A15 | RX notif handling for new groups (STATISTICS 0x10 oper notifs, SYSTEM 0xfc, DATA_PATH 0xf8, BT_COEX PROFILE, MLD cmd responses copied to resp buffer) | `iwx_rx_pkt` 11250-11400 | missing → "unhandled firmware response" + no resp copy for MLD cmds | P0 (resp copy) | todo |
+| A15 | RX notif handling for new groups (STATISTICS 0x10 oper notifs, SYSTEM 0xfc, DATA_PATH 0xf8, BT_COEX PROFILE, MLD cmd responses copied to resp buffer) | `iwx_rx_pkt` 11250-11400 | missing → "unhandled firmware response" + no resp copy for MLD cmds | P0 (resp copy) | done (untested) |
 
 ### B. Scan
 
 | # | Requirement | OpenBSD | itlwm | Prio | Status |
 |---|---|---|---|---|---|
-| B1 | SCAN_REQ_UMAC v17 (`scan_req_umac_v17`, general params v11, channel params v7, channel cfg v5 with band in flags, psd_20=-128) | `iwx_umac_scan_v17` 7750 + helpers 7507-7690 | only v12/v14 + legacy | P0 | todo |
-| B2 | Dispatch by cmd version, size by version | `iwx_initiate_scan` 8257 | `iwx_umac_scan` 7744, `iwx_umac_scan_size` 7660 | P0 | todo |
-| B3 | Scan complete / iteration complete → endscan | rx_pkt 11176 | same | P0 | ok; add count log |
+| B1 | SCAN_REQ_UMAC v17 (`scan_req_umac_v17`, general params v11, channel params v7, channel cfg v5 with band in flags, psd_20=-128) | `iwx_umac_scan_v17` 7750 + helpers 7507-7690 | only v12/v14 + legacy | P0 | done (untested) |
+| B2 | Dispatch by cmd version, size by version | `iwx_initiate_scan` 8257 | `iwx_umac_scan` 7744, `iwx_umac_scan_size` 7660 | P0 | done (untested) |
+| B3 | Scan complete / iteration complete → endscan | rx_pkt 11176 | same | P0 | ok + MTL log |
 
 ### C. Association (MLD API, all gated on `sc_use_mld_api`)
 

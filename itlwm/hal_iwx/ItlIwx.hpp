@@ -400,6 +400,11 @@ public:
     int    iwx_umac_scan(struct iwx_softc *, int);
     int    iwx_umac_scan_v12(struct iwx_softc *, int);
     int    iwx_umac_scan_v14(struct iwx_softc *, int);
+    uint8_t iwx_umac_scan_fill_channels_v5(struct iwx_softc *,
+                struct iwx_scan_channel_cfg_umac_v5 *, size_t, int, uint32_t);
+    void    iwx_scan_umac_fill_general_p_v11(struct iwx_softc *,
+                struct iwx_scan_general_params_v11 *, uint16_t, int);
+    int    iwx_umac_scan_v17(struct iwx_softc *, int);
     void    iwx_mcc_update(struct iwx_softc *, struct iwx_mcc_chub_notif *);
     uint8_t    iwx_ridx2rate(struct ieee80211_rateset *, int);
     int    iwx_rval2ridx(int);
