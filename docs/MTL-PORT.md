@@ -226,3 +226,7 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
 - Never touch the Windows SSD (`HFS002…`, disk 0) or the firmware boot order. Never add NVRAM boot entries.
 - Don't raise CPU/GPU power limits.
 - Speakers (Cirrus CS35L56 amps on SPI) come last, only after Wi-Fi.
+
+## Next after itlwm works (owner decision 2026-11-02)
+
+Native Wi-Fi menu (AirportItlwm) is deferred until itlwm.kext + HeliPort works on the hardware without issues. Then: port the `itlwm/hal_iwx` MTL changes onto laobamac/itlwm (`AirportItlwm-Sequoia` target, macOS 15.2+, tested on 15.8 24H23) in a separate branch of thebcd69/itlwm, build in our CI, and switch config.plist from itlwm to AirportItlwm (never both enabled). Known limits of that fork: no WPA3-only/AWDL/MLO, HE opt-in via `itlwm_he=1`.
