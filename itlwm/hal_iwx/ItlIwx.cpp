@@ -6825,6 +6825,10 @@ iwx_tx_fill_cmd(struct iwx_softc *sc, struct iwx_node *in,
     uint8_t hwrate;
 
     *flags = 0;
+    /* MTL (OpenBSD r1.230): EAPOL during the 4-way handshake is high priority. */
+    if (sc->sc_use_mld_api && (ic->ic_flags & IEEE80211_F_RSNON) &&
+        ni->ni_rsn_supp_state == RSNA_SUPP_PTKNEGOTIATING)
+        *flags |= IWX_TX_FLAGS_HIGH_PRI;
     if (IEEE80211_IS_MULTICAST(wh->i_addr1) ||
         type != IEEE80211_FC0_TYPE_DATA) {
         /* for non-data, use the lowest supported rate */
@@ -9611,6 +9615,8 @@ iwx_clear_statistics(struct iwx_softc *sc)
     /* MTL (OpenBSD r1.230): -77+ firmware only has SYSTEM_STATISTICS_CMD. */
     version = iwx_lookup_cmd_ver(sc, IWX_SYSTEM_GROUP,
                                  IWX_SYSTEM_STATISTICS_CMD);
+    if (!sc->sc_use_mld_api)
+        version = IWX_FW_CMD_VER_UNKNOWN; /* keep the legacy path on other cards */
     if (version == 1) {
         struct iwx_system_statistics_cmd sscmd = {
             .cfg_mask = htole32(IWX_STATS_CFG_FLG_ON_DEMAND_NTFY_MSK),
@@ -12675,12 +12681,15 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
                 
             /* MTL: notifications of newer (-77+) firmware, OpenBSD r1.230 */
             case IWX_WIDE_ID(IWX_MAC_CONF_GROUP, IWX_MISSED_BEACONS_NOTIF):
-                iwx_rx_bmiss(sc, pkt, data);
+                /* first fields match the legacy notif (mac/link id, consec counters) */
+                if (sc->sc_use_mld_api)
+                    iwx_rx_bmiss(sc, pkt, data);
                 break;
                 
             case IWX_WIDE_ID(IWX_MAC_CONF_GROUP,
                 IWX_CHANNEL_SWITCH_START_NOTIF): {
-                if (sc->sc_ic.ic_opmode != IEEE80211_M_STA ||
+                if (!sc->sc_use_mld_api ||
+                    sc->sc_ic.ic_opmode != IEEE80211_M_STA ||
                     sc->sc_ic.ic_state != IEEE80211_S_RUN)
                     break;
                 XYLog("MTL: firmware channel switch notification 0x%x\n", code);

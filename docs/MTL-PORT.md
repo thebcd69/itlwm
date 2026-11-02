@@ -28,11 +28,17 @@ Get it from the openbsd/src GitHub mirror: `sys/dev/pci/if_iwx.c`, `if_iwxreg.h`
 
 | Commit | What |
 |---|---|
-| `95ae312` | New cfg `iwl_cfg_ma_b0_gf_a0` → `iwlwifi-ma-b0-gf-a0-89.ucode`; MA+GF dev-info entries (incl. Killer 1671/1672) switched to it; off-by-one fix in `iwx_read_pnvm` (it built `...-gf-a.pnvm` instead of `...-gf-a0.pnvm`); CI workflow with pre-releases. CI green, release `mtl-95ae312`. |
-| `487859d` | `scripts/iwx_fw_info.py` + CI step that prints the firmware's TLVs, command versions and PNVM SKUs. CI green. |
-| (this commit) | Correct command-group names in the dump script; this handoff file; `docs/fw89-tlv-dump.txt`. |
+| `95ae312` | New cfg `iwl_cfg_ma_b0_gf_a0` → `iwlwifi-ma-b0-gf-a0-89.ucode`; MA+GF dev-info entries switched to it; PNVM file-name fix; CI workflow. |
+| `487859d` | `scripts/iwx_fw_info.py` + CI TLV dump. |
+| `0134ec2` | Handoff notes, `docs/fw89-tlv-dump.txt`. |
+| `31f7622` | Gap analysis table (this file). |
+| `50254a2` | Bring-up: MLD/MA register defs, fragmented PNVM, ALIVE v6, MCC resp v4, MLD switch. |
+| `6b0d9cf` | **Milestone build**: UMAC scan v17, MLD-gated init_hw, MLD cmd responses in rx_pkt. |
+| `413a70d` | MLD command builders (PHY v4, RLC, MAC/LINK/STA, SCD v3, BAID, SEC_KEY). |
+| `fc062b9` | **Milestone build**: association via MLD API (auth/deauth/run, queues, BA, keys, stats). |
+| (this commit, see `git log`) | **Milestone build**: data path review (EAPOL high-prio), MLD-only gating of stats/bmiss/channel-switch, status + risks + test checklist in this file. |
 
-**Nothing in the driver logic has been ported yet.** The agent stopped during the gap analysis, while reading the scan code.
+**Driver logic for this card is now ported but completely untested on hardware.** Everything below "done" means "compiles locally (clang -fsyntax-only) and follows OpenBSD r1.230"; CI is the real compiler.
 
 ## What the -89 firmware advertises
 
@@ -96,7 +102,7 @@ Status: `ok` = itlwm already equivalent, `todo`, `done` = ported (compiled, unte
 | A11 | init_hw: tx-ant, (phy cfg), BT, SOC v2, DQA, LTR, CT-kill, power, MCC, scan cfg, beacon filter off. **No aux STA, no PHY ctxt at init** | `iwx_init_hw` 10094 | `iwx_init_hw` 10049 (adds aux STA via ADD_STA and 3 PHY ctxts) | P0 | done (untested) |
 | A12 | MCC_UPDATE rsp v6 → use `iwx_mcc_update_resp_v4` when CAPA 89 (MCC_UPDATE_11AX) is set; reject resp ver ≥ 8 | `iwx_send_update_mcc_cmd` 9972 | `iwx_send_update_mcc_cmd` 9961 (old struct only → EIO → init fails) | P0 | done (untested) |
 | A13 | SCAN_CFG reduced: bcast_sta_id=0xff only if SCAN_CFG ver < 5 / unknown | `iwx_config_umac_scan_reduced` 7473 | `iwx_config_umac_scan` 7540 (keys off ADD_STA ver → AUX_STA_ID) | P1 | done (untested) |
-| A14 | rate_n_flags version from TX_CMD notif ver (>6 → v2) | `iwx_post_alive` 3062 | n/a (tx_fill_cmd keys off TX cmd ver > 8, equivalent for mgmt) | P1 | partial, see D |
+| A14 | rate_n_flags version from TX_CMD notif ver (>6 → v2) | `iwx_post_alive` 3062 | n/a (tx_fill_cmd keys off TX cmd ver > 8, equivalent for mgmt) | P1 | done (sc_rate_n_flags_version set; TX path keys off TX_CMD ver > 8, equivalent) |
 | A15 | RX notif handling for new groups (STATISTICS 0x10 oper notifs, SYSTEM 0xfc, DATA_PATH 0xf8, BT_COEX PROFILE, MLD cmd responses copied to resp buffer) | `iwx_rx_pkt` 11250-11400 | missing → "unhandled firmware response" + no resp copy for MLD cmds | P0 (resp copy) | done (untested) |
 
 ### B. Scan
@@ -130,11 +136,68 @@ Status: `ok` = itlwm already equivalent, `todo`, `done` = ported (compiled, unte
 
 | # | Requirement | OpenBSD | itlwm | Prio | Status |
 |---|---|---|---|---|---|
-| D1 | TX_CMD v10 = gen3 struct, rate_n_flags v2 for mgmt/multicast | `iwx_tx_fill_cmd` 6123, `iwx_tx` 6233 | `iwx_tx_fill_cmd` 6574 (v2 rate when TX ver > 8) | P0 | ok (check sta_id/queue mapping) |
-| D2 | TX resp notif v7 | `iwx_rx_tx_cmd` 5418 | `iwx_rx_tx_cmd` 5931 | P1 | check |
+| D1 | TX_CMD v10 = gen3 struct, rate_n_flags v2 for mgmt/multicast | `iwx_tx_fill_cmd` 6123, `iwx_tx` 6233 | `iwx_tx_fill_cmd` 6574 (v2 rate when TX ver > 8) | P0 | ok; MLD adds IWX_TX_FLAGS_HIGH_PRI for EAPOL like OpenBSD |
+| D2 | TX resp notif v7 | `iwx_rx_tx_cmd` 5418 | `iwx_rx_tx_cmd` 5931 | P1 | ok (struct identical to OpenBSD; v7 only changes rate format) |
 | D3 | RX MPDU desc for AX210 family (one pkt per buffer, rx_mpdu_desc v3) | `iwx_rx_mpdu_mq` 5201 | `iwx_rx_mpdu_mq` 5612 | P0 | ok (AX210 path exists) |
-| D4 | TLC update notif with rate v2 | `iwx_rs_update` 8809 | `iwx_rs_update` 9061 | P2 | check |
-| D5 | Compressed BA notif → txq advance by fw queue id | `iwx_rx_compressed_ba` 5488 | `iwx_rx_tx_ba_notif` 5849 | P1 | check |
+| D4 | TLC update notif with rate v2 | `iwx_rs_update` 8809 | `iwx_rs_update` 9061 | P2 | ok for HT/VHT/HE (itlwm decodes v2 when notif ver >= 3); legacy-rate branch still reads a v1 PLCP (display/ni_txrate only) |
+| D5 | Compressed BA notif → txq advance by fw queue id | `iwx_rx_compressed_ba` 5488 | `iwx_rx_tx_ba_notif` 5849 | P1 | not changed; uses fw queue ids from the notif, should be fine |
+
+## Where the port stands (resume here)
+
+Stages 1-5 of the plan are implemented as far as possible without hardware. Code locations (search for `MTL`):
+
+- **Bring-up**: `iwx_read_firmware` (MTL log + quiet TLVs), `iwx_pnvm_setup_fragmented` / `iwx_ctxt_info_gen3_set_pnvm` / `iwx_load_pnvm` (fragmented PNVM, flag wait), ALIVE v6 in `iwx_rx_pkt`, `iwx_run_init_mvm_ucode` (MLD switch, INIT_COMPLETE loop on MA), `iwx_send_update_mcc_cmd` (resp v4), `iwx_init_hw` (no aux STA / PHY add under MLD), `iwx_config_umac_scan` (bcast_sta_id by SCAN_CFG ver), `iwx_post_alive` (rate_n_flags version).
+- **Scan**: `iwx_umac_scan_v17`, `iwx_umac_scan_fill_channels_v5`, `iwx_scan_umac_fill_general_p_v11`; dispatched from `iwx_umac_scan`.
+- **Association**: block "MTL: MLD firmware API" before `iwx_umac_scan_fill_channels` (PHY/RLC/MAC/LINK/STA/SCD/BAID/SEC_KEY) and `iwx_mld_auth` / `iwx_mld_deauth` / `iwx_mld_session_protection` before `iwx_auth`. Hooks in `iwx_phy_ctxt_cmd`, `iwx_phy_ctxt_update`, `iwx_binding_cmd`, `iwx_mac_ctxt_cmd`, `iwx_add_sta_cmd`, `iwx_rm_sta_cmd`, `iwx_rm_sta`, `iwx_drain_sta`, `iwx_enable_txq`, `iwx_tvqm_enable_txq`, `iwx_enable_mgmt_queue`, `iwx_sta_rx_agg`, `iwx_set_key`, `iwx_delete_key`, `iwx_clear_statistics`, `iwx_run`, `iwx_ba_task`, `iwx_ampdu_tx_stop`.
+- **Data**: `iwx_tx_fill_cmd` (HIGH_PRI EAPOL). TX cmd v10 / TX resp v7 / RX desc v3 needed no change.
+
+Every MLD-specific path is gated on `sc_use_mld_api`, a firmware capability, or an advertised command version; other cards keep their old code paths (exception: none intended; review the diff `git diff 0134ec2 -- itlwm/hal_iwx` if in doubt).
+
+### Expected boot log (grep `MTL:`)
+
+```
+MTL: firmware iwlwifi-ma-b0-gf-a0-89.ucode version 89.2987248927.0, 218 cmd versions, ... MLD capa 1, fragmented PNVM capa 1, IML 13944 bytes
+MTL: ALIVE v6 status 0xcafe (ok) ... sku_id 0x000?10d1/0x0000000?/0x00000000
+MTL: PNVM SKU block ... matches ALIVE sku_id
+MTL: PNVM loaded (fragmented): ... 2 segments ...
+MTL: PNVM doorbell done, complete=1 err=0
+MTL: INIT_COMPLETE received (err 0)
+MTL: MLD API ON (capa 1, mac type 0x44)
+MTL: init TX_ANT_CONFIGURATION ... -> 0   (BT_CONFIG, SOC, DQA, TEMP, POWER, MCC, SCAN_CFG, BEACON_FILTERING follow)
+MTL: SCAN_REQ_UMAC v17 (scan, ...) -> 0
+MTL: SCAN_COMPLETE_UMAC status ... N nodes
+MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v2 add ... / LINK_CONFIG ... / STA_CONFIG v99 (... bytes) ... / SCD_QUEUE_CONFIG v3 ... fw assigned qid 1 / SYSTEM_STATISTICS v1 clear / SESSION_PROTECTION v2 add
+```
+(STA_CONFIG is not in CMD_VERSIONS, so it logs version 99 = unknown and uses the v1 struct size, exactly like OpenBSD.)
+
+### Remaining gaps / not ported
+
+1. `iwx_rs_update` legacy (non-HT) branch decodes a v1 PLCP from a v2 rate; only affects `ni_txrate` bookkeeping/logging.
+2. MISSED_BEACONS_NOTIF (MAC_CONF 0xf6) is routed to the legacy `iwx_rx_bmiss` struct like OpenBSD; the -89 image does not list that notif, so the legacy 0xa2 one is expected.
+3. No 6 GHz in the v17 channel list (OpenBSD does not do it either): channels are tagged 2.4 or 5 GHz only.
+4. IGTK/BIP stays in software (itlwm never offloaded it); SEC_KEY is used for CCMP pairwise + group keys only.
+5. uAPSD fields of STA_CONFIG are not set (itl80211 has no uAPSD).
+6. Monitor mode under MLD is untested (same code path as OpenBSD).
+7. Key installation failure: OpenBSD deauths on SEC_KEY failure; itlwm sends keys async so a failure only shows up as a `MTL: SEC_KEY ... -> err` log / fw error.
+
+### Risks for first hardware boot (most likely first)
+
+1. **PNVM**: if the firmware does not accept the fragmented PNVM, `PNVM doorbell done, complete=0 err=35` (2 s timeout) and init aborts. Look at the SKU log line; if no SKU matched, the firmware proceeds without PNVM (regulatory/channels may be limited). Fallback experiment: clear CAPA 32 handling (use the concatenated path) to compare.
+2. **Lost wakeups**: itlwm sleeps on `msleep` without holding the flag lock; on MA the PNVM/INIT waits loop on the flag (OpenBSD style), but other waits (`iwx_load_firmware` 1 s for ALIVE) are unchanged.
+3. **Firmware assert (SYSASSERT) on a malformed command** -> `iwx_nic_error` dump in the log, then the init task restarts the device in a loop. Most likely candidates: PHY_CONTEXT v4 layout (we send the UHB channel-info layout because CAPA 48 is set), STA_CONFIG v1 size, LINK_CONFIG fields. The fw error dump's `cmd 0x...` / last host command tells which.
+4. **SCD queue id mismatch**: we require the firmware to assign qid 1 to the mgmt queue (OpenBSD does the same). If it returns another id, `iwx_enable_txq` fails with EIO and auth fails (log line `fw assigned qid X`).
+5. **SYSTEM_STATISTICS clear** waits up to 1 s for END_NOTIF; on timeout auth fails (OpenBSD behaviour). If this shows up, make it non-fatal.
+6. Panics: `panic()` only on unsupported opmode (unchanged). No new KASSERTs. Ring arrays: agg queues use `sc_tid_data[].qid` < `nitems(sc->txq)` checks.
+
+### Hardware test checklist
+
+1. Boot with the newest `mtl-<sha>` pre-release kext (see procedure below); collect `dmesg` / `log show` as described.
+2. `grep MTL:` — check in order: firmware line, ALIVE v6 ok, PNVM SKU match + complete=1, INIT_COMPLETE, MLD API ON, every `init ... -> 0`.
+3. With HeliPort: scan list shows networks (`SCAN_COMPLETE_UMAC` and node count > 0).
+4. Join an open or WPA2-PSK 2.4/5 GHz network: `auth (MLD)`, all MLD commands `-> 0`, `SEC_KEY add ... -> 0` twice (pairwise + group), link up.
+5. Data: ping the gateway, run a download (checks TX agg `SCD_QUEUE_CONFIG (tvqm)` and RX BA `RX_BAID_ALLOCATION ... add`).
+6. Disconnect / reconnect / sleep-wake: `deauth (MLD)` sequence with `SCD_QUEUE_CONFIG v3 remove`, `STA_REMOVE`, `LINK_CONFIG remove`, `MAC_CONFIG remove`, PHY remove all `-> 0`.
+7. On any firmware error: save the full log; the lines after `firmware error` / `nic_error` (error table) identify the failing command.
 
 ## Hardware test procedure (only when the owner is at the PC)
 
