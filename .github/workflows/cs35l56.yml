@@ -1,0 +1,61 @@
+name: CS35L56Amp build (GU605M speakers)
+
+on:
+  push:
+    branches: [ cs35l56-speakers ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: MacKernelSDK
+        run: git clone --depth=1 https://github.com/acidanthera/MacKernelSDK.git
+
+      - name: Firmware (linux-firmware, sha256-pinned)
+        run: sh scripts/fetch_fw.sh build/fw
+
+      - name: Host test (real firmware through simulated amp)
+        run: |
+          clang++ -std=gnu++17 -O1 -Wall -o build/host_test src/Cs35l56.cpp src/CsDsp.cpp tests/host_test.cpp
+          ./build/host_test build/fw/CS35L56_Rev3.11.16.wmfw build/fw/cs35l56-b0-dsp1-misc-10431c63-spkid*-amp*.bin | tail -5
+
+      - name: Build kext
+        run: |
+          set -o pipefail
+          make SDK=MacKernelSDK FWDIR=build/fw VER=$(git rev-parse --short HEAD) 2>&1 | tail -120
+
+      - name: Inspect
+        run: |
+          K=build/CS35L56Amp.kext
+          file $K/Contents/MacOS/CS35L56Amp
+          otool -l $K/Contents/MacOS/CS35L56Amp | grep -A3 LC_SEGMENT_64 | head -30
+          nm $K/Contents/MacOS/CS35L56Amp | grep -E "kmod_info|_start|_stop|CS35L56Amp.*MetaClass" | head
+          # Every undefined symbol must come from the kernel/IOPCIFamily, never from libc++.
+          nm -u $K/Contents/MacOS/CS35L56Amp | grep -iE "std::|__cxa_throw|_malloc$|_printf$" && exit 1 || true
+
+      - name: Pack
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          mkdir -p dist && cp -R build/CS35L56Amp.kext dist/
+          cp docs/TEST-CHECKLIST.md dist/ 2>/dev/null || true
+          cp -R linux-capture dist/ 2>/dev/null || true
+          cd dist && zip -qr ../CS35L56Amp-$SHA.zip . && cd .. && ls -la CS35L56Amp-$SHA.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CS35L56Amp
+          path: CS35L56Amp-*.zip
+
+      - name: Pre-release (test build)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          gh release create "cs35l56-$SHA" CS35L56Amp-$SHA.zip --prerelease --target "$GITHUB_SHA" \
+            --title "CS35L56Amp test $SHA" --notes "GU605M (1043:1C63) CS35L56 speaker amp test build ($SHA). Read TEST-CHECKLIST.md first. Not for general use."

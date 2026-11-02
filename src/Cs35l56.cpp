@@ -238,7 +238,7 @@ int Cs35l56::probe(bool hardResetDone) {
     ret = writeHdaDaiConfig();
     if (ret) return ret;
 
-    CS_LOG("%s: probe done (rev %02X, secured=%d)", amp_name, revid, is_secured);
+    CS_LOG("%s: probe done (index %d, rev %02X, secured=%d)", amp_name, index, revid, is_secured);
     probed = true;
     return CS_OK;
 }
