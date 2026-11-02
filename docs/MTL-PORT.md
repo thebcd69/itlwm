@@ -39,7 +39,9 @@ Get it from the openbsd/src GitHub mirror: `sys/dev/pci/if_iwx.c`, `if_iwxreg.h`
 | `1751ebb` | **Milestone build**: data path review (EAPOL high-prio), MLD-only gating of stats/bmiss/channel-switch, status + risks + test checklist in this file. |
 
 | `614f5e4` | ALIVE wait checks the flag first (MA only). |
-| (latest, see `git log`) | **Milestone build**: TLV parser capa-index fix (A0) — without it no build before this one could load the -89 firmware. |
+| `d2953ae` | **Milestone build** (CI green): TLV parser capa-index fix (A0) — without it no build before this one could load the -89 firmware. |
+| `695815c` | MAC_CONFIG `he_support` for HE nodes; HE gap documented. |
+| (latest, see `git log`) | **Milestone build**: test build containing everything above. **Use the newest `mtl-<sha>` pre-release for the first hardware test.** |
 
 **Driver logic for this card is now ported but completely untested on hardware.** Everything below "done" means "compiles locally (clang -fsyntax-only) and follows OpenBSD r1.230"; CI is the real compiler.
 
