@@ -66,12 +66,75 @@ Key command versions (group/cmd → version), names checked against OpenBSD `if_
 
 STA_CONFIG_CMD (0x0a) and STA_REMOVE_CMD (0x0c) are not listed in CMD_VERSIONS; check how OpenBSD treats a missing entry.
 
-## Plan (not started)
+## Plan
 
-1. **Gap analysis** → write a table here: each requirement, OpenBSD function/line → itlwm function, priority, status. Order: bring-up → scan → associate → data. Areas: TLV parsing, PNVM SKU selection, context-info/IML loading for integrated AX210-family, ALIVE v6, init commands (NVM_GET_INFO v4 response, PHY/SOC/LARI/MCC, RLC), UMAC scan v17, PHY context v4, the MLD path (MAC/link/STA config, aux/mgmt stations, session protection, keys via SEC_KEY_CMD, BAID with station masks, SCD queue config, TLC v4, beacon filter, power), TX v10 / RX descriptors.
-2. **Implement in that order.** Gate new code on `sc_use_mld_api`, MA MAC type or the firmware's advertised command versions, the way OpenBSD does, so other cards keep their current paths. Port OpenBSD logic faithfully; adapt only the plumbing (C++ methods, IOKit DMA, `mbuf_t`, timeouts, itl80211).
-3. **Logging:** add `XYLog("MTL: ...")` lines for firmware name + API, PNVM SKU loaded or not, ALIVE version/status, MLD API on/off, each init command + result, scan request version + scan-complete count, and each MLD MAC/link/STA command + return code.
-4. Keep CI green; every meaningful step ends in a published pre-release. Keep this file current: done / compiled-but-untested / risks / test checklist.
+1. Gap analysis (below) — **done**.
+2. Implement in the order of the table, gated on `sc_use_mld_api` / MA MAC type / advertised command versions so other cards keep their old paths.
+3. Logging: every new path prints `XYLog("MTL: ...")` (grep the boot log for `MTL:`).
+4. Commit small; intermediate commits carry `[skip ci]`, milestone commits (end of bring-up / scan / association / data) do not, so they produce a test build.
+
+## Gap analysis (OpenBSD if_iwx.c r1.230 → itlwm ItlIwx.cpp)
+
+Line numbers: OpenBSD = `/home/claude/obsd/if_iwx.c`, itlwm = `itlwm/hal_iwx/ItlIwx.cpp` at 0134ec2 (they drift as code is added; search by function name).
+Priority: P0 = card cannot get past this point without it, P1 = needed for a working link, P2 = robustness/perf.
+Status: `ok` = itlwm already equivalent, `todo`, `done` = ported (compiled, untested on hardware).
+
+### A. Bring-up
+
+| # | Requirement | OpenBSD | itlwm | Prio | Status |
+|---|---|---|---|---|---|
+| A1 | MA attach config: integrated=1, ltr NONE, low_latency_xtal=0, xtal_latency=0, uhb=1, AX210 family | attach `PCI_PRODUCT_INTEL_WL_22500_14` ~12514 | `iwl_ma_trans_cfg` + `iwl_cfg_ma_b0_gf_a0` (dev-info table, last match wins) | P0 | ok (values already identical) |
+| A2 | Firmware TLV parse: unknown TLVs (0x39,0x3a,0x3c,0x3d,0x44,0x45,0x100-0x102,0x100000b/c) must not abort | `iwx_read_firmware` 1199 (default → EINVAL, but lists all of them) | `iwx_read_firmware` 1371 (default just logs) | P0 | ok; add MTL log of fw name/version/API/MLD capa |
+| A3 | IML TLV (13944 B) stored and handed to context info | 1585, `iwx_ctxt_info_gen3_init` 991 | `sc_iml[20480]`, `iwx_ctxt_info_gen3_init` 1107 | P0 | ok |
+| A4 | Paging / SEC_RT (60 sections) / FW_MEM_SEG / FSEQ | `iwx_init_fw_sec` 638 | `iwx_init_fw_sec` 761 | P0 | ok (same code) |
+| A5 | ALIVE notif v6 (v5 + IMR info): status, error tables, **SKU id** | `iwx_rx_pkt` IWX_ALIVE 10995 (by notif version) | `iwx_rx_pkt` IWX_ALIVE (by size; v6 falls into v5 branch by luck) | P0 | todo: explicit v6 handling + log |
+| A6 | PNVM: pick SKU block matching ALIVE sku_id, collect SEC_RT payloads | `iwx_pnvm_parse` 4310, `iwx_pnvm_handle_section` 4194 | `iwx_read_pnvm` 2003, `iwx_pnvm_handle_section` 1846 | P0 | ok for selection; see A7 |
+| A7 | **Fragmented PNVM** (CAPA 32 `FRAGMENTED_PNVM_IMG` is set in -89): base addr must point to `iwx_pnvm_info_dram` (array of segment addrs) | `iwx_pnvm_setup_fragmented` 4130, `iwx_ctxt_info_gen3_set_pnvm` 4349 | concatenates segments into one blob | P0 | todo |
+| A8 | PNVM doorbell + wait for `PNVM_INIT_COMPLETE` flag | `iwx_load_pnvm` 4376 | `iwx_load_pnvm` 2105 (single tsleep, no flag) | P0 | todo |
+| A9 | NVM_GET_INFO rsp v4 (API REGULATORY_NVM_INFO) | `iwx_nvm_get` 3978 | `iwx_nvm_get` 4585 | P0 | ok (identical) |
+| A10 | MLD API switch: CAPA 110 && (MAC type MA or BZ) → `sc_use_mld_api` | `iwx_run_init_mvm_ucode` 4576 | missing | P0 | todo |
+| A11 | init_hw: tx-ant, (phy cfg), BT, SOC v2, DQA, LTR, CT-kill, power, MCC, scan cfg, beacon filter off. **No aux STA, no PHY ctxt at init** | `iwx_init_hw` 10094 | `iwx_init_hw` 10049 (adds aux STA via ADD_STA and 3 PHY ctxts) | P0 | todo: skip aux STA + PHY add when MLD |
+| A12 | MCC_UPDATE rsp v6 → use `iwx_mcc_update_resp_v4` when CAPA 89 (MCC_UPDATE_11AX) is set; reject resp ver ≥ 8 | `iwx_send_update_mcc_cmd` 9972 | `iwx_send_update_mcc_cmd` 9961 (old struct only → EIO → init fails) | P0 | todo |
+| A13 | SCAN_CFG reduced: bcast_sta_id=0xff only if SCAN_CFG ver < 5 / unknown | `iwx_config_umac_scan_reduced` 7473 | `iwx_config_umac_scan` 7540 (keys off ADD_STA ver → AUX_STA_ID) | P1 | todo (MLD-gated) |
+| A14 | rate_n_flags version from TX_CMD notif ver (>6 → v2) | `iwx_post_alive` 3062 | n/a (tx_fill_cmd keys off TX cmd ver > 8, equivalent for mgmt) | P1 | partial, see D |
+| A15 | RX notif handling for new groups (STATISTICS 0x10 oper notifs, SYSTEM 0xfc, DATA_PATH 0xf8, BT_COEX PROFILE, MLD cmd responses copied to resp buffer) | `iwx_rx_pkt` 11250-11400 | missing → "unhandled firmware response" + no resp copy for MLD cmds | P0 (resp copy) | todo |
+
+### B. Scan
+
+| # | Requirement | OpenBSD | itlwm | Prio | Status |
+|---|---|---|---|---|---|
+| B1 | SCAN_REQ_UMAC v17 (`scan_req_umac_v17`, general params v11, channel params v7, channel cfg v5 with band in flags, psd_20=-128) | `iwx_umac_scan_v17` 7750 + helpers 7507-7690 | only v12/v14 + legacy | P0 | todo |
+| B2 | Dispatch by cmd version, size by version | `iwx_initiate_scan` 8257 | `iwx_umac_scan` 7744, `iwx_umac_scan_size` 7660 | P0 | todo |
+| B3 | Scan complete / iteration complete → endscan | rx_pkt 11176 | same | P0 | ok; add count log |
+
+### C. Association (MLD API, all gated on `sc_use_mld_api`)
+
+| # | Requirement | OpenBSD | itlwm | Prio | Status |
+|---|---|---|---|---|---|
+| C1 | PHY ctxt v4 ADD in auth (not at init), REMOVE in deauth; RLC_CONFIG v2 after every PHY ctxt add/modify | `iwx_auth` 8970, `iwx_phy_ctxt_update` 8917, `iwx_phy_send_rlc` 8893 | PHY added at init, MODIFY in auth; no RLC | P0 | todo |
+| C2 | MAC_CONFIG_CMD v2 (`iwx_mac_config_cmd`) instead of MAC_CONTEXT_CMD | `iwx_mld_mac_ctxt_cmd` 8108 | `iwx_mac_ctxt_cmd` 8395 | P0 | todo |
+| C3 | No BINDING with MLD | `iwx_binding_cmd` 5586 | `iwx_binding_cmd` 6018 | P0 | todo |
+| C4 | LINK_CONFIG v2 add + modify (rates, EDCA, protection, beacon timing) | `iwx_mld_modify_link_fill` 6954 | missing | P0 | todo |
+| C5 | STA_CONFIG (not in CMD_VERSIONS → v1 size `iwx_mvm_sta_cfg_cmd`) / STA_REMOVE + link deactivate/remove | `iwx_mld_add_sta_cmd` 7039, `iwx_mld_rm_sta_cmd` 7254 | `iwx_add_sta_cmd` 7157 (ADD_STA) | P0 | todo |
+| C6 | No aux STA (scan uses no STA with reduced scan cfg v5+) | — | `iwx_add_aux_sta` 7275 called from init_hw | P0 | todo (skip) |
+| C7 | Session protection v2 with id_and_color | `iwx_schedule_session_protection` 3078 | `iwx_schedule_protect_session` 3617 | P1 | check/ok |
+| C8 | SEC_KEY_CMD v1 (sta_mask) for CCMP pairwise/group, IGTK | `iwx_mld_set_sta_key_cmd` 9351, `iwx_add_sta_key` 9513, `iwx_delete_key` 9590 | `iwx_set_key` 9526 (ADD_STA_KEY) | P0 (WPA2) | todo |
+| C9 | SCD_QUEUE_CONFIG v3 (ADD/REMOVE with sta_mask) for mgmt queue (qid 1) and agg queues; explicit removal before STA remove | `iwx_enable_txq` 2914, `iwx_disable_txq` 3003, `iwx_enable_mgmt_queue` 8475, `iwx_rm_sta` 7187 | `iwx_enable_txq` 3306, `iwx_tvqm_enable_txq` 3402 (legacy SCD_QUEUE_CFG) | P0 | todo |
+| C10 | RX BAID alloc v2 (`RX_BAID_ALLOCATION_CONFIG_CMD`, sta_mask) instead of ADD_STA BA fields | `iwx_sta_rx_agg_baid_cfg_cmd` 3436, `iwx_sta_rx_agg` 3546 | `iwx_sta_rx_agg` 4144 (ADD_STA) | P1 | todo |
+| C11 | TLC v4 | `iwx_rs_init_v4` 8692 | `iwx_rs_init` 8891 (v4 struct already) | P1 | check |
+| C12 | run(): STA update before MAC modify(assoc=1); run_stop: no quotas / binding | `iwx_run` 9139, `iwx_run_stop` 9260 | `iwx_run` 9332 (quotas only if !DYNAMIC_QUOTA → capa set, skipped) | P1 | todo (order under MLD) |
+| C13 | Flush: TXPATH_FLUSH v? / no drain with MLD | `iwx_drain_sta` 6540, `iwx_flush_sta` 6581 | `iwx_drain_sta` 6989 (ADD_STA) | P1 | todo |
+| C14 | Beacon filter / power table | `iwx_set_pslevel` 6700, `iwx_disable_beacon_filter` 6808 | `iwx_power_update_device`, `iwx_power_mac_update_mode` | P2 | check |
+
+### D. Data path
+
+| # | Requirement | OpenBSD | itlwm | Prio | Status |
+|---|---|---|---|---|---|
+| D1 | TX_CMD v10 = gen3 struct, rate_n_flags v2 for mgmt/multicast | `iwx_tx_fill_cmd` 6123, `iwx_tx` 6233 | `iwx_tx_fill_cmd` 6574 (v2 rate when TX ver > 8) | P0 | ok (check sta_id/queue mapping) |
+| D2 | TX resp notif v7 | `iwx_rx_tx_cmd` 5418 | `iwx_rx_tx_cmd` 5931 | P1 | check |
+| D3 | RX MPDU desc for AX210 family (one pkt per buffer, rx_mpdu_desc v3) | `iwx_rx_mpdu_mq` 5201 | `iwx_rx_mpdu_mq` 5612 | P0 | ok (AX210 path exists) |
+| D4 | TLC update notif with rate v2 | `iwx_rs_update` 8809 | `iwx_rs_update` 9061 | P2 | check |
+| D5 | Compressed BA notif → txq advance by fw queue id | `iwx_rx_compressed_ba` 5488 | `iwx_rx_tx_ba_notif` 5849 | P1 | check |
 
 ## Hardware test procedure (only when the owner is at the PC)
 
