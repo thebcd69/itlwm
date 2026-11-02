@@ -1,14 +1,16 @@
 # GU605MY dahili hoparlör (2x CS35L56) — macOS fizibilite raporu
 
-Durum: v1 (2026-11-02). Kaynaklar: torvalds/linux master (2026-11-02), CirrusLogic/linux-firmware (GitHub aynası),
+Durum: v2 (2026-11-02). Kaynaklar: torvalds/linux master (2026-11-02), CirrusLogic/linux-firmware (GitHub aynası),
 makinenin DSDT.aml'i, AppleALC master. Donanım haritası: [HARDWARE.md](HARDWARE.md).
 
 ## Özet karar
-**Uygulanabilir, orta güven (~%55-60).** En kritik iki parça (amfi DSP'sine firmware indirme ve SPI/GPIO erişimi)
-Linux kaynağından birebir taşınabiliyor ve firmware ayrıştırması gerçek GU605 dosyalarıyla host üzerinde doğrulandı
-(41 algoritma, 0xbedead sonlandırıcı, tüm .bin blokları eşleşti). Asıl belirsizlik **codec tarafı**: ALC285'in I2S
-çıkışını (amfilere giden dijital ses) macOS AppleHDA'nın hangi pin/DAC yolu üzerinden süreceği. Bu kısım
-donanımda deneme gerektiriyor (layout 21 ve 33 adayları, bkz. §4).
+**Uygulanabilir, orta-yüksek güven (~%65).** Amfi tarafı (SPI master, GPIO, CS35L56 açılışı, DSP firmware
+indirme) Linux kaynağından birebir taşındı, derleniyor (CI yeşil) ve firmware ayrıştırması gerçek GU605
+dosyalarıyla host üzerinde doğrulandı (fw id 0x1a00d6 v3.11.16, 41 algoritma, 0xbedead sonlandırıcı, 42/42
+.bin bloğu eşleşti). Codec tarafı için güçlü bir emsal var: CirrusAudioFixup, ALC285 + SPI CS35L41 kullanan
+ASUS ROG Strix G16 G614JI'de **AppleALC layout 21 @ 48 kHz** ile hoparlör sesi bildiriyor. Kalan belirsizlikler
+donanımda ölçülecek: (1) LPSS SPI saat bölücüsünün BIOS ön değeri, (2) ALC285 I2S beslemesinin layout 21'de
+aktif olması (değilse layout 33), (3) amfilerin saat yokken sürekli PLAY'de kararlı kalması.
 
 ## 1. Linux'ta zincir uçtan uca
 1. **ACPI**: `\_SB.PC00.SPI0.SPK1` (CSC3556) iki SpiSerialBusV2 kaynağı → serial-multi-instantiate iki
@@ -70,9 +72,35 @@ EFI kalibrasyonu (silicon UID eşleşmesi + CAL_R/CAL_AMBIENT/CAL_STATUS/CAL_CHE
 AppleHDA ses akışına bağlı PLAY/PAUSE (IOAudioEngine durum bildirimi), uyku/uyanma yeniden init,
 özel AppleALC layout'u (0x17→DAC 0x02).
 
-## 6. Riskler
+## 6. Emsal çalışmalar
+- **CirrusAudioFixup** (github.com/hoaug-tran/CirrusAudioFixup): Lilu tabanlı, CS35L41 B2 (I2C + SPI).
+  "Working": Legion 7 16ACHg6, Legion 5 Pro (I2C); HP ZBook Fury 16 G9, **ASUS ROG Strix G16 G614JI (SPI,
+  layout 21, 48 kHz)**. Firmware kext'e gömülü; ASP: 3.072 MHz BCLK, 32-bit slot, 24-bit veri; 44.1 kHz
+  donanım akışı kabul edilmiyor. CS35L56 desteklemiyor. Mimari bu repo ile aynı (codec yolu AppleHDA/AppleALC,
+  amfi yönetimi kext).
+- InsanelyMac "Help wanted: developing kext for Cirrus Logic CS35L41 amplifier (I2C) on Legion 7" (konu 362242):
+  ham I2C register tekrarı makineyi dondurdu; dersler: sürücü mantığını taşı, GPIO reset şart, ses I2S'ten gelir.
+- Linux belgesi Documentation/sound/codecs/cs35l56.rst: HDA'da firmware olmadan ses yok; "patched=0" normal;
+  dosyalar dizüstüne özgü.
+- Bilinen bir "VoodooSPI" / MTL LPSS SPI macOS sürücüsü bulunamadı; Apple'ın LPSS SPI sürücüsü yeniden
+  kullanılmıyor (özel API, farklı platform).
+
+## 7. Riskler
 - Hoparlör hasarı: firmware'in koruma algoritmaları (tuning .bin) yüklenmeden PLAY yapılmıyor; ses seviyesi
   ≤ 0 dB ile sınırlı, boost ayarlarına dokunulmuyor (yalnızca Linux'un yazdığı kayıtlar).
 - SPI yanlış CS: CS1 GPIO'su yanlış pad'e giderse yanlış cihaza yazılabilir — pad numaraları DSDT + Linux
   pinctrl tablosu + BIOS GPCM tablosu ile üçlü doğrulandı; ayrıca DEVID 0x35A56 okunmadan hiçbir yazma yapılmıyor.
-- Codec I2S yolu macOS'ta aktif olmayabilir (yukarıda).
+- Codec I2S yolu macOS'ta aktif olmayabilir (yukarıda). Tanı: `-cs35l56codecdump`.
+- Amfiler AppleHDA akışından bağımsız sürekli PLAY'de; saat yokken firmware'in davranışı belirsiz
+  (Linux PLAY'i akış başlamadan hemen önce verir, yani kısa süreli saatsiz PLAY'i tolere ediyor). İzleme
+  döngüsü PS≠0 olursa en fazla 5 kez PLAY tekrarlar.
+- Uyku: amfiler uykuda reset'e alınır, uyanışta firmware yeniden indirilir (~1 sn).
+
+## 8. Kaynaktan çözülemeyen veri (son çare listesi)
+| Veri | Neden kaynakta yok | En küçük yakalama |
+|---|---|---|
+| LPSS SPI `CLOCK_PARAMS` (BAR+0x200) M/N ön değeri | BIOS'a bağlı | macOS log'u zaten basıyor (`SPI: CAPS=... CLOCK_PARAMS`) — Linux gerekmez |
+| ALC285 pin varsayılanları 0x14/0x17, bağlantılar | kernel yalnızca 0x19/0x1b'yi düzeltiyor | `-cs35l56codecdump` (macOS'ta) — Linux gerekmez |
+| Calibration EFI değişkeni | makineye özgü | yalnızca tam yol için; live USB script'i okur |
+| Linux'ta çalışan amfinin register durumu | çalışma anı | live USB script'i (regmap dump) — yalnızca macOS'ta amfi açılıp ses yoksa |
+
