@@ -25,10 +25,9 @@ TLV_NAMES = {
     0x1000008: "DBG_REGIONS", 0x1000009: "DBG_TRIGGERS", 0x100000a: "DBG_CONF_SET",
 }
 
-# Types the itlwm iwx parser knows about (anything else is logged + skipped).
 GROUPS = {0: "LEGACY", 1: "LONG", 2: "SYSTEM", 3: "MAC_CONF", 4: "PHY_OPS",
-          5: "DATA_PATH", 0xb: "LOCATION", 0xc: "REGULATORY_NVM",
-          0x10: "DEBUG", 0x1f: "STATISTICS"}
+          5: "DATA_PATH", 8: "LOCATION", 9: "BT_COEX", 0xb: "PROT_OFFLOAD",
+          0xc: "REGULATORY_NVM", 0xe: "XVT", 0xf: "DEBUG", 0x10: "STATISTICS"}
 
 
 def tlvs(buf, off):

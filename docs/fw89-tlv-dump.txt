@@ -1,0 +1,294 @@
+== itlwm/firmware/iwlwifi-ma-b0-gf-a0-89.ucode: 1752976 bytes, zlib 674643 bytes (ratio 2.60)
+  human: release/core86:signed_remote:b20dcd1f  ver 0x00000059 (major 0 minor 0 api 0) build 2987248927
+  FW_VERSION 89.2987248927.0
+  FLAGS = 3690679167 (0xdbfb4b7f)
+  capa index 0 = 0x9def037e
+  capa index 2 = 0xdb91eedb
+  capa index 3 = 0x19bfdfbd
+  capa index 4 = 0x00000002
+  PHY_SKU = 3342360 (0x330018)
+  PROBE_MAX_LEN = 512 (0x200)
+  NUM_OF_CPU = 2 (0x2)
+  N_SCAN_CHANNELS = 67 (0x43)
+  capa index 1 = 0xff7f7aef
+  FSEQ FSEQ Version: 0.0.3.94
+  FW_NUM_STATIONS = 15 (0xf)
+  FW_NUM_BEACONS = 1 (0x1)
+  PAGING = 802816 (0xc4000)
+  TLV types (type name count bytes):
+    0x0000006 PROBE_MAX_LEN             1        4
+    0x0000007 PAN                       1        0
+    0x0000012 FLAGS                     1        4
+    0x0000013 SEC_RT                   60  1699912
+    0x0000016 DEF_CALIB                 1       12
+    0x0000017 PHY_SKU                   1        4
+    0x000001b NUM_OF_CPU                1        4
+    0x000001d API_CHANGES_SET           3       24
+    0x000001e ENABLED_CAPABILITIES      5       40
+    0x000001f N_SCAN_CHANNELS           1        4
+    0x0000020 PAGING                    1        4
+    0x0000024 FW_VERSION                1       12
+    0x0000030 CMD_VERSIONS              1      872
+    0x0000033 FW_MEM_SEG                4       48
+    0x0000034 IML                       1    13944
+    0x0000036 UMAC_DEBUG_ADDRS          1        8
+    0x0000037 LMAC_DEBUG_ADDRS          1       32
+    0x0000039 FW_RECOVERY_INFO          1        8
+    0x000003a HW_TYPE                   1       12
+    0x000003c FW_FSEQ_VERSION           1       52
+    0x000003d PHY_INTEGRATION_VERSION    1       40
+    0x0000044 CURRENT_PC                1       72
+    0x0000045 ?                         1      132
+    0x0000100 FW_NUM_STATIONS           1        4
+    0x0000101 ?                         1        4
+    0x0000102 FW_NUM_BEACONS            1        4
+    0x1000005 DBG_INFO                 15     1140
+    0x1000006 DBG_BUF_ALLOC             4      112
+    0x1000007 DBG_HCMD                 33     1788
+    0x1000008 DBG_REGIONS              26    23236
+    0x1000009 DBG_TRIGGERS             25     1332
+    0x100000a DBG_CONF_SET             21     1028
+    0x100000b ?                         2       72
+    0x100000c ?                        13     7060
+  API bits: [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68]
+  CAPA bits: [1, 2, 3, 4, 5, 6, 8, 9, 16, 17, 18, 19, 21, 22, 23, 24, 26, 27, 28, 31, 32, 33, 34, 35, 37, 38, 39, 41, 43, 44, 45, 46, 48, 49, 50, 51, 52, 53, 54, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 67, 68, 70, 71, 73, 74, 75, 77, 78, 79, 80, 84, 87, 88, 89, 91, 92, 94, 95, 96, 98, 99, 100, 101, 103, 104, 105, 106, 107, 108, 110, 111, 112, 113, 114, 115, 116, 117, 119, 120, 123, 124, 129]
+  CMD_VERSIONS (218 entries) group/cmd: cmd_ver notif_ver
+    LEGACY         0x00/0x00: cmd   0 notif   0
+    LEGACY         0x00/0x01: cmd  99 notif   6
+    LEGACY         0x00/0x2a: cmd  99 notif   2
+    LEGACY         0x00/0x4a: cmd  99 notif   1
+    LEGACY         0x00/0x56: cmd  99 notif   5
+    LEGACY         0x00/0xa2: cmd  99 notif   4
+    LEGACY         0x00/0xa5: cmd  99 notif   3
+    LEGACY         0x00/0xad: cmd  99 notif   3
+    LEGACY         0x00/0xb1: cmd  99 notif   2
+    LEGACY         0x00/0xc1: cmd  99 notif   5
+    LEGACY         0x00/0xc4: cmd  99 notif   9
+    LEGACY         0x00/0xc5: cmd  99 notif   5
+    LEGACY         0x00/0xce: cmd  99 notif   5
+    LONG           0x01/0x08: cmd   4 notif   0
+    LONG           0x01/0x09: cmd   1 notif   0
+    LONG           0x01/0x0c: cmd   5 notif   0
+    LONG           0x01/0x0d: cmd  17 notif   0
+    LONG           0x01/0x0e: cmd   1 notif   0
+    LONG           0x01/0x1c: cmd  10 notif   7
+    LONG           0x01/0x1e: cmd   2 notif   1
+    LONG           0x01/0x40: cmd   1 notif   0
+    LONG           0x01/0x41: cmd  99 notif   1
+    LONG           0x01/0x42: cmd  99 notif   2
+    LONG           0x01/0x43: cmd   2 notif   0
+    LONG           0x01/0x48: cmd   2 notif   0
+    LONG           0x01/0x4f: cmd   2 notif   0
+    LONG           0x01/0x55: cmd   1 notif   0
+    LONG           0x01/0x5d: cmd   2 notif   0
+    LONG           0x01/0x6a: cmd   3 notif   0
+    LONG           0x01/0x6e: cmd   3 notif   0
+    LONG           0x01/0x77: cmd   7 notif   0
+    LONG           0x01/0x83: cmd   1 notif   0
+    LONG           0x01/0x88: cmd   3 notif   3
+    LONG           0x01/0x91: cmd  13 notif   0
+    LONG           0x01/0x98: cmd   1 notif   0
+    LONG           0x01/0x9b: cmd   6 notif   0
+    LONG           0x01/0x9f: cmd   8 notif   0
+    LONG           0x01/0xa9: cmd   1 notif   0
+    LONG           0x01/0xae: cmd   2 notif   0
+    LONG           0x01/0xb9: cmd   2 notif   0
+    LONG           0x01/0xbd: cmd  88 notif   1
+    LONG           0x01/0xc8: cmd   1 notif   6
+    LONG           0x01/0xcb: cmd   2 notif   0
+    LONG           0x01/0xd0: cmd   1 notif   0
+    LONG           0x01/0xd1: cmd   3 notif   0
+    LONG           0x01/0xd2: cmd   4 notif   0
+    LONG           0x01/0xd3: cmd   4 notif   0
+    LONG           0x01/0xd4: cmd   4 notif   0
+    LONG           0x01/0xe0: cmd   3 notif   0
+    LONG           0x01/0xe1: cmd   6 notif   0
+    LONG           0x01/0xe2: cmd   5 notif   0
+    LONG           0x01/0xe4: cmd   4 notif   0
+    LONG           0x01/0xee: cmd   3 notif   0
+    LONG           0x01/0xf1: cmd  88 notif   3
+    LONG           0x01/0xf2: cmd   8 notif   0
+    LONG           0x01/0xf6: cmd   8 notif   0
+    SYSTEM         0x02/0x00: cmd  99 notif   4
+    SYSTEM         0x02/0x01: cmd   2 notif   0
+    SYSTEM         0x02/0x02: cmd   1 notif   0
+    SYSTEM         0x02/0x0b: cmd   3 notif   0
+    SYSTEM         0x02/0x0c: cmd  99 notif   1
+    SYSTEM         0x02/0x0d: cmd   1 notif   0
+    SYSTEM         0x02/0x0e: cmd   1 notif   0
+    SYSTEM         0x02/0x0f: cmd   1 notif   0
+    SYSTEM         0x02/0xfd: cmd  99 notif   1
+    SYSTEM         0x02/0xff: cmd  99 notif   1
+    MAC_CONF       0x03/0x05: cmd   2 notif   0
+    MAC_CONF       0x03/0x06: cmd   2 notif   0
+    MAC_CONF       0x03/0x08: cmd   2 notif   0
+    MAC_CONF       0x03/0x09: cmd   2 notif   0
+    MAC_CONF       0x03/0x0e: cmd   3 notif   0
+    MAC_CONF       0x03/0x10: cmd   1 notif   0
+    MAC_CONF       0x03/0xf8: cmd  99 notif   1
+    MAC_CONF       0x03/0xf9: cmd  99 notif   2
+    MAC_CONF       0x03/0xfb: cmd  99 notif   3
+    MAC_CONF       0x03/0xff: cmd  99 notif   3
+    PHY_OPS        0x04/0x00: cmd   1 notif   1
+    PHY_OPS        0x04/0x03: cmd   1 notif   0
+    PHY_OPS        0x04/0x04: cmd   1 notif   0
+    PHY_OPS        0x04/0x05: cmd   5 notif   1
+    PHY_OPS        0x04/0x07: cmd   5 notif   0
+    PHY_OPS        0x04/0x0a: cmd  99 notif   0
+    PHY_OPS        0x04/0x0c: cmd   1 notif   0
+    PHY_OPS        0x04/0xfe: cmd  99 notif   2
+    DATA_PATH      0x05/0x04: cmd   1 notif   0
+    DATA_PATH      0x05/0x08: cmd   2 notif   0
+    DATA_PATH      0x05/0x09: cmd  99 notif  99
+    DATA_PATH      0x05/0x0b: cmd  99 notif  99
+    DATA_PATH      0x05/0x0d: cmd   1 notif   0
+    DATA_PATH      0x05/0x0f: cmd   4 notif   0
+    DATA_PATH      0x05/0x11: cmd   1 notif   0
+    DATA_PATH      0x05/0x16: cmd   2 notif   1
+    DATA_PATH      0x05/0x17: cmd   3 notif   2
+    DATA_PATH      0x05/0x18: cmd   1 notif   0
+    DATA_PATH      0x05/0xf3: cmd  99 notif   1
+    DATA_PATH      0x05/0xf5: cmd  99 notif   3
+    DATA_PATH      0x05/0xf7: cmd  99 notif   3
+    DATA_PATH      0x05/0xf8: cmd  99 notif   2
+    0x6            0x06/0xfb: cmd  99 notif   1
+    0x8            0x08/0x00: cmd  13 notif   1
+    0x8            0x08/0x04: cmd   9 notif   0
+    0x8            0x08/0x05: cmd   3 notif   0
+    0x8            0x08/0x06: cmd   6 notif   0
+    0x8            0x08/0x07: cmd   1 notif   0
+    0x8            0x08/0xfb: cmd  99 notif   2
+    0x8            0x08/0xfe: cmd  99 notif   4
+    0x8            0x08/0xff: cmd  99 notif   9
+    LOCATION       0x0b/0xfb: cmd  99 notif   1
+    LOCATION       0x0b/0xfc: cmd  99 notif   1
+    LOCATION       0x0b/0xfd: cmd  99 notif   3
+    LOCATION       0x0b/0xfe: cmd  99 notif   1
+    LOCATION       0x0b/0xff: cmd  99 notif   4
+    REGULATORY_NVM 0x0c/0x00: cmd   1 notif   0
+    REGULATORY_NVM 0x0c/0x01: cmd   8 notif   0
+    REGULATORY_NVM 0x0c/0x02: cmd   1 notif   4
+    REGULATORY_NVM 0x0c/0x03: cmd   4 notif   0
+    REGULATORY_NVM 0x0c/0x04: cmd   2 notif   0
+    REGULATORY_NVM 0x0c/0x05: cmd   1 notif   0
+    REGULATORY_NVM 0x0c/0x06: cmd   1 notif   0
+    REGULATORY_NVM 0x0c/0x08: cmd   1 notif   0
+    REGULATORY_NVM 0x0c/0xfe: cmd  99 notif   1
+    0xe            0x0e/0x00: cmd   2 notif   4
+    0xe            0x0e/0x05: cmd   2 notif   0
+    0xe            0x0e/0x06: cmd  99 notif   6
+    0xe            0x0e/0x07: cmd   4 notif   0
+    0xe            0x0e/0x08: cmd   1 notif   0
+    0xe            0x0e/0x09: cmd   1 notif   0
+    0xe            0x0e/0x0b: cmd   1 notif   0
+    0xe            0x0e/0x0d: cmd   1 notif   0
+    0xe            0x0e/0x0e: cmd   1 notif   0
+    0xe            0x0e/0x10: cmd   1 notif   2
+    0xe            0x0e/0x11: cmd   1 notif   0
+    0xe            0x0e/0x12: cmd  99 notif   1
+    0xe            0x0e/0x13: cmd   2 notif   0
+    0xe            0x0e/0x15: cmd   1 notif   0
+    0xe            0x0e/0x16: cmd  99 notif   0
+    0xe            0x0e/0x17: cmd   1 notif   0
+    0xe            0x0e/0x17: cmd  99 notif   1
+    0xe            0x0e/0x18: cmd   1 notif   0
+    0xe            0x0e/0x1a: cmd   1 notif   0
+    0xe            0x0e/0x1b: cmd   1 notif   0
+    0xe            0x0e/0x1c: cmd  99 notif   1
+    0xe            0x0e/0x1d: cmd   5 notif   1
+    0xe            0x0e/0x1e: cmd   1 notif   0
+    0xe            0x0e/0x20: cmd   1 notif   0
+    0xe            0x0e/0x21: cmd  99 notif   2
+    0xe            0x0e/0x22: cmd   1 notif   0
+    0xe            0x0e/0x24: cmd   2 notif   0
+    0xe            0x0e/0x25: cmd   2 notif   0
+    0xe            0x0e/0x26: cmd   1 notif   0
+    0xe            0x0e/0x28: cmd  99 notif   1
+    0xe            0x0e/0x2a: cmd   3 notif   0
+    0xe            0x0e/0x2b: cmd   1 notif   0
+    0xe            0x0e/0x2c: cmd   1 notif   0
+    0xe            0x0e/0x2d: cmd   4 notif   0
+    0xe            0x0e/0x2e: cmd   1 notif   0
+    0xe            0x0e/0x2f: cmd   4 notif   0
+    0xe            0x0e/0x30: cmd   4 notif   0
+    0xe            0x0e/0x31: cmd   2 notif   0
+    0xe            0x0e/0x32: cmd   8 notif   0
+    0xe            0x0e/0x33: cmd   4 notif   0
+    0xe            0x0e/0x34: cmd   1 notif   1
+    0xe            0x0e/0x35: cmd   4 notif   3
+    0xe            0x0e/0x36: cmd   2 notif   0
+    0xe            0x0e/0x37: cmd   1 notif  88
+    0xe            0x0e/0x38: cmd   6 notif   0
+    0xe            0x0e/0x39: cmd  99 notif   9
+    0xe            0x0e/0x3b: cmd   1 notif   1
+    0xe            0x0e/0x3c: cmd  99 notif   0
+    0xe            0x0e/0x3d: cmd  99 notif  99
+    0xe            0x0e/0x3e: cmd   2 notif   0
+    0xe            0x0e/0x3f: cmd  99 notif   2
+    0xe            0x0e/0x40: cmd   1 notif   0
+    0xe            0x0e/0x41: cmd  99 notif   1
+    0xe            0x0e/0x42: cmd   1 notif   0
+    0xe            0x0e/0x43: cmd   1 notif   0
+    0xe            0x0e/0x44: cmd  99 notif   1
+    0xe            0x0e/0x45: cmd   1 notif   0
+    0xe            0x0e/0x46: cmd  99 notif   1
+    0xe            0x0e/0x47: cmd  99 notif   1
+    0xe            0x0e/0x48: cmd   1 notif   0
+    0xe            0x0e/0x49: cmd  99 notif   1
+    0xe            0x0e/0x4a: cmd   1 notif   0
+    0xe            0x0e/0x4c: cmd   1 notif   0
+    0xe            0x0e/0x4d: cmd   1 notif   0
+    0xe            0x0e/0x4e: cmd  99 notif   1
+    0xe            0x0e/0x4f: cmd  99 notif   0
+    0xe            0x0e/0x50: cmd  99 notif  99
+    0xe            0x0e/0x51: cmd   1 notif   0
+    0xe            0x0e/0x53: cmd   1 notif   0
+    0xe            0x0e/0x54: cmd  99 notif  99
+    0xe            0x0e/0x55: cmd   0 notif   1
+    0xe            0x0e/0x57: cmd   2 notif   0
+    0xe            0x0e/0x58: cmd  99 notif   2
+    0xe            0x0e/0x59: cmd   1 notif   2
+    0xe            0x0e/0x5a: cmd   1 notif   0
+    0xe            0x0e/0x5b: cmd   1 notif   0
+    0xe            0x0e/0x5c: cmd   1 notif   1
+    0xe            0x0e/0x5d: cmd   1 notif   0
+    0xe            0x0e/0x5e: cmd   1 notif   0
+    0xe            0x0e/0x64: cmd   1 notif   0
+    0xe            0x0e/0x65: cmd  99 notif   1
+    0xe            0x0e/0x66: cmd   1 notif   1
+    0xe            0x0e/0x67: cmd   2 notif   0
+    0xe            0x0e/0x68: cmd   1 notif   0
+    0xe            0x0e/0xfc: cmd  99 notif   1
+    0xe            0x0e/0xfd: cmd  99 notif   0
+    0xe            0x0e/0xfe: cmd  99 notif   0
+    0xf            0x0f/0x01: cmd   1 notif   0
+    0xf            0x0f/0x09: cmd   1 notif   1
+    0xf            0x0f/0x0a: cmd  99 notif   3
+    0xf            0x0f/0xff: cmd  99 notif  88
+    DEBUG          0x10/0x00: cmd  99 notif   3
+    DEBUG          0x10/0x01: cmd  99 notif   4
+    DEBUG          0x10/0x02: cmd  99 notif   5
+    DEBUG          0x10/0x03: cmd  99 notif   4
+    DEBUG          0x10/0x04: cmd  99 notif   4
+    DEBUG          0x10/0x05: cmd  99 notif   1
+== itlwm/firmware/iwlwifi-ma-b0-gf-a0.pnvm: 55072 bytes, zlib 8930 bytes (ratio 6.17)
+  SKU 0x000610d1 0x00000000 0x00000000
+    HW_TYPE mac 0x44 rf 0x10d
+    PNVM_VERSION 0xe1c4fa8e
+    SEC_RT offset 0xcafedead len 1656
+    SEC_RT offset 0xdeadcafe len 12004
+  SKU 0x000610d1 0x00000003 0x00000000
+    HW_TYPE mac 0x44 rf 0x10d
+    PNVM_VERSION 0xe1c4fa8e
+    SEC_RT offset 0xcafedead len 1656
+    SEC_RT offset 0xdeadcafe len 12184
+  SKU 0x000a10d1 0x00000000 0x00000000
+    HW_TYPE mac 0x44 rf 0x10d
+    PNVM_VERSION 0xe1c4fa8e
+    SEC_RT offset 0xcafedead len 1656
+    SEC_RT offset 0xdeadcafe len 11928
+  SKU 0x000510d1 0x00000000 0x00000000
+    HW_TYPE mac 0x44 rf 0x10d
+    PNVM_VERSION 0xe1c4fa8e
+    SEC_RT offset 0xcafedead len 1656
+    SEC_RT offset 0xdeadcafe len 12028
