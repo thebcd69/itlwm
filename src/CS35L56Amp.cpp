@@ -13,7 +13,7 @@ OSDefineMetaClassAndStructors(CS35L56Amp, IOService)
 
 // ---------------------------------------------------------------- SPI bus
 // cs35l56_regmap_spi: [addr32 BE (|0x80 in byte0 for reads)][pad16][val32 BE]
-static void putBe32(uint8_t *p, uint32_t v) { p[0] = v >> 24; p[1] = v >> 16; p[2] = v >> 8; p[3] = v; }
+static void putBe32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v; }
 
 static bool regOk(uint32_t reg) { return (reg & 3) == 0 && reg <= CS35L56_DSP1_PMEM_5114; }
 
@@ -249,7 +249,7 @@ bool CS35L56Amp::bringUp() {
     running = true;
     replayAttempts = 0;
     publish("CS35L56-State", "playing");
-    publishNum("CS35L56-VolumeDb", (uint64_t)(-volAttenDb) & 0xffffffffffffffffULL);
+    publishNum("CS35L56-AttenuationDb", (uint64_t)volAttenDb);
     CS_LOG("both amps patched and in PLAY, amp volume -%d dB", volAttenDb);
     return true;
 }
