@@ -1,0 +1,59 @@
+name: MTL build (Meteor Lake AX211)
+
+on:
+  push:
+    branches: [ mtl ]
+  workflow_dispatch:
+
+env:
+  OUT: build/Build/Products/Debug
+  LF: https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: MacKernelSDK
+        run: git clone --depth=1 https://github.com/acidanthera/MacKernelSDK.git
+
+      - name: Meteor Lake firmware (linux-firmware)
+        run: |
+          set -e
+          cd itlwm/firmware
+          for f in iwlwifi-ma-b0-gf-a0-89.ucode iwlwifi-ma-b0-gf-a0.pnvm; do
+            ok=0
+            for p in "$f" "intel/iwlwifi/$f"; do
+              if curl -fsSL --retry 3 -o "$f" "$LF/$p" && [ "$(stat -f%z "$f")" -gt 10000 ]; then ok=1; echo "$f <- $p"; break; fi
+            done
+            [ $ok = 1 ] || { echo "indirilemedi: $f"; exit 1; }
+          done
+          xxd -l 16 iwlwifi-ma-b0-gf-a0-89.ucode
+          shasum -a 256 iwlwifi-ma-b0-gf-a0-89.ucode iwlwifi-ma-b0-gf-a0.pnvm
+          rm -f ../../include/FwBinary.cpp
+
+      - name: Build itlwm (Debug)
+        run: |
+          set -o pipefail
+          xcodebuild -scheme itlwm -configuration Debug -derivedDataPath build GIT_COMMIT=_$(git rev-parse --short HEAD) | tail -40
+
+      - name: Pack
+        run: |
+          cd $OUT && zip -qr itlwm-mtl-$(git -C $GITHUB_WORKSPACE rev-parse --short HEAD).zip itlwm.kext && ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: itlwm-mtl
+          path: ${{ env.OUT }}/itlwm-mtl-*.zip
+
+      - name: Pre-release (test build)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          gh release create "mtl-$SHA" $OUT/itlwm-mtl-$SHA.zip --prerelease --target "$GITHUB_SHA" \
+            --title "MTL test $SHA" --notes "Meteor Lake AX211 test build ($SHA). Debug, not for general use."

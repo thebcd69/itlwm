@@ -2024,7 +2024,8 @@ iwx_read_pnvm(struct iwx_softc *sc)
         goto out;
     if (find - sc->sc_fwname - 1 <= 0)
         goto out;
-    fwname_copy[find - sc->sc_fwname - 1] = '\0';
+    /* keep everything before the last "-": "...-gf-a0-89.ucode" -> "...-gf-a0" */
+    fwname_copy[find - sc->sc_fwname] = '\0';
     
     snprintf(pnvm_name, sizeof(pnvm_name), "%s.pnvm",
          fwname_copy);
@@ -11690,6 +11691,14 @@ const struct iwl_cfg iwl_cfg_ma_a0_gf_a0 = {
     .num_rbds = IWL_NUM_RBDS_AX210_HE,
 };
 
+/* Meteor Lake CNVi (MA B0) + AX211 (GF): linux-firmware / OpenBSD iwx use the -89 API with a PNVM. */
+const struct iwl_cfg iwl_cfg_ma_b0_gf_a0 = {
+    .fwname = "iwlwifi-ma-b0-gf-a0-89.ucode",
+    .uhb_supported = 1,
+    .device_family = IWX_DEVICE_FAMILY_AX210,
+    .num_rbds = IWL_NUM_RBDS_AX210_HE,
+};
+
 const struct iwl_cfg iwl_cfg_ma_a0_gf4_a0 = {
     .fwname = "iwlwifi-ma-a0-gf4-a0-63.ucode",
     .uhb_supported = 1,
@@ -12270,8 +12279,8 @@ static const struct iwl_dev_info iwl_dev_info_table[] = {
     IWL_DEV_INFO(0x7F70, 0x1672, iwlax211_2ax_cfg_so_gf_a0, iwl_ax211_killer_1675i_name),
 
     /* MA with GF2 */
-    IWL_DEV_INFO(0x7E40, 0x1671, iwl_cfg_ma_a0_gf_a0, iwl_ax211_killer_1675s_name),
-    IWL_DEV_INFO(0x7E40, 0x1672, iwl_cfg_ma_a0_gf_a0, iwl_ax211_killer_1675i_name),
+    IWL_DEV_INFO(0x7E40, 0x1671, iwl_cfg_ma_b0_gf_a0, iwl_ax211_killer_1675s_name),
+    IWL_DEV_INFO(0x7E40, 0x1672, iwl_cfg_ma_b0_gf_a0, iwl_ax211_killer_1675i_name),
 
     /* Qu with Jf */
     /* Qu B step */
@@ -12550,7 +12559,7 @@ static const struct iwl_dev_info iwl_dev_info_table[] = {
                   IWL_CFG_MAC_TYPE_MA, IWL_CFG_ANY,
                   IWL_CFG_RF_TYPE_GF, IWL_CFG_ANY,
                   IWL_CFG_ANY, IWL_CFG_ANY, IWL_CFG_NO_CDB,
-                  iwl_cfg_ma_a0_gf_a0, iwl_ax211_name),
+                  iwl_cfg_ma_b0_gf_a0, iwl_ax211_name),
     _IWL_DEV_INFO(IWL_CFG_ANY, IWL_CFG_ANY,
                   IWL_CFG_MAC_TYPE_MA, IWL_CFG_ANY,
                   IWL_CFG_RF_TYPE_GF, IWL_CFG_ANY,
