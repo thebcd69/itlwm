@@ -9,6 +9,7 @@
 #include "LpssSpi.h"
 #include "MtlGpio.h"
 #include "CsBus.h"
+#include "HdaDump.h"
 
 class Cs35l56;
 
@@ -67,6 +68,9 @@ private:
     bool noPlay = false;       // -cs35l56noplay
     bool noReset = false;      // -cs35l56noreset
     bool clkFix = false;       // -cs35l56clkfix
+    bool codecDump = false;    // -cs35l56codecdump (read-only HDA verbs)
+    bool hdaOk = false;
+    HdaDump hda;
 
     MtlGpio gpio;
     LpssSpi spi;

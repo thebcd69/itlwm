@@ -80,6 +80,7 @@ void CS35L56Amp::parseBootArgs() {
     noPlay = PE_parse_boot_argn("-cs35l56noplay", dummy, sizeof(dummy));
     noReset = PE_parse_boot_argn("-cs35l56noreset", dummy, sizeof(dummy));
     clkFix = PE_parse_boot_argn("-cs35l56clkfix", dummy, sizeof(dummy));
+    codecDump = PE_parse_boot_argn("-cs35l56codecdump", dummy, sizeof(dummy));
 }
 
 void CS35L56Amp::publish(const char *key, const char *val) { setProperty(key, val); }
@@ -104,8 +105,8 @@ bool CS35L56Amp::start(IOService *provider) {
         return false;
     }
     parseBootArgs();
-    CS_LOG("boot-args: vol=-%d dB spkid=%d dbg=%d noplay=%d noreset=%d clkfix=%d",
-           volAttenDb, spkIdOverride, dbg, noPlay, noReset, clkFix);
+    CS_LOG("boot-args: vol=-%d dB spkid=%d dbg=%d noplay=%d noreset=%d clkfix=%d codecdump=%d",
+           volAttenDb, spkIdOverride, dbg, noPlay, noReset, clkFix, codecDump);
     publish("CS35L56-Version", CS35L56_VERSION);
     publish("CS35L56-State", "starting");
 
@@ -267,6 +268,10 @@ void CS35L56Amp::worker() {
         } else {
             CS_LOG("bring-up attempts exhausted, staying off");
         }
+        if (codecDump && !hdaOk) {
+            hdaOk = hda.init();
+            if (hdaOk) { hda.dumpAll(); hda.dumpLive(); }
+        }
     } else if (!asleep && running) {
         ticks++;
         bool verbose = dbg || ticks <= 6;
@@ -283,6 +288,8 @@ void CS35L56Amp::worker() {
         }
         if (bus[0].errorCount() + bus[1].errorCount() > 50) failAll("too many SPI errors");
     }
+    static int liveDumps = 0;
+    if (!asleep && hdaOk && !needBringUp && (dbg || liveDumps < 30)) { liveDumps++; hda.dumpLive(); }
     IOLockUnlock(lock);
     if (!stopping) scheduleWorker(dbg ? 2000 : 10000);
 }
@@ -325,6 +332,7 @@ void CS35L56Amp::stop(IOService *provider) {
         IOLockUnlock(lock);
     }
     for (int i = 0; i < 2; i++) { delete amp[i]; amp[i] = nullptr; }
+    hda.release();
     spi.release();
     gpio.release();
     PMstop();

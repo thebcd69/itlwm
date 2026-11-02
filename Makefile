@@ -13,7 +13,7 @@ CFLAGS := $(ARCH) -std=gnu++17 -O2 -g -Wall -Wno-unused-parameter -Werror=return
           -DCS35L56_VERSION=\"$(VER)\" -I$(SDK)/Headers -Isrc
 CCKEXT := $(shell xcrun clang -print-resource-dir)/lib/darwin/libclang_rt.cc_kext.a
 LDFLAGS:= $(ARCH) -nostdlib -Xlinker -kext -L$(SDK)/Library/x86_64 -lkmod -lkmodc++ $(CCKEXT)
-SRCS   := src/Cs35l56.cpp src/CsDsp.cpp src/MtlGpio.cpp src/LpssSpi.cpp src/CS35L56Amp.cpp $(OUT)/FirmwareData.cpp
+SRCS   := src/Cs35l56.cpp src/CsDsp.cpp src/MtlGpio.cpp src/LpssSpi.cpp src/CS35L56Amp.cpp src/HdaDump.cpp $(OUT)/FirmwareData.cpp
 OBJS   := $(patsubst %.cpp,$(OUT)/obj/%.o,$(notdir $(SRCS))) $(OUT)/obj/kmod_info.o
 
 all: $(KEXT)

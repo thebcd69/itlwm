@@ -76,6 +76,13 @@ Linux'a göre amfi beslemesi NID 0x17 yolunda olabilir. Denenecek: **layout 33**
   **veya** geçici olarak boot-args'a `alcid=33` ekle (config değişmeden).
 - Sonra 3. adımı tekrarla. Kulaklık çıkışının hâlâ çalıştığını kontrol et.
 
+### 4b. Codec dökümü (Linux'a gerek kalmadan)
+boot-args'a `-cs35l56codecdump` ekle (yalnızca HDA GET verb'leri; AppleHDA ile aynı anda çalışır, nadiren
+AppleHDA bir komut zaman aşımı görebilir → o açılışta ses gitmezse bu arg'ı kaldır). Log'da `HDA: nid ...`
+satırları (pin varsayılanları, bağlantılar) ve ses çalarken `HDA: live DAC ... stream N` satırları çıkar:
+hangi DAC'ın stream aldığını ve 0x14/0x17'nin hangi DAC'a bağlı olduğunu gösterir. Bir test sesi çalarken
+10-20 sn bekle, sonra log'u al.
+
 ## 5. Ses seviyesi
 - `cs35l56_vol=N` → amfi dijital kazancı -N dB (0..40). Varsayılan 6. **0'ın altına (pozitif kazanç) gidilemez.**
 - Normal kullanım için macOS ses tuşları codec DAC'ını kontrol eder.
