@@ -1414,7 +1414,7 @@ enum iwx_msix_ivar_for_cause {
 #define IWX_UCODE_TLV_CAPA_LQM_SUPPORT            81
 #define IWX_UCODE_TLV_CAPA_LED_CMD_SUPPORT        88
 
-#define IWX_NUM_UCODE_TLV_CAPA 128
+#define IWX_NUM_UCODE_TLV_CAPA 160 /* MTL: OpenBSD r1.230; -89 firmware sets capa index 4 (bit 129) */
 
 /*
  * For 16.0 uCode and above, there is no differentiation between sections,

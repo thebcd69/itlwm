@@ -1585,6 +1585,12 @@ iwx_read_firmware(struct iwx_softc *sc)
                 capa = (struct iwx_ucode_capa *)tlv_data;
                 idx = le32toh(capa->api_index);
                 if (idx >= howmany(IWX_NUM_UCODE_TLV_CAPA, 32)) {
+                    /*
+                     * NB: this used to end TLV parsing silently (err == 0),
+                     * dropping every later TLV. Keep that for old cards but
+                     * log it so it cannot go unnoticed again.
+                     */
+                    XYLog("MTL: ENABLED_CAPABILITIES index %d out of range, TLV parsing stops here\n", idx);
                     goto parse_out;
                 }
                 for (i = 0; i < 32; i++) {

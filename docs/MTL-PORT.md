@@ -36,7 +36,10 @@ Get it from the openbsd/src GitHub mirror: `sys/dev/pci/if_iwx.c`, `if_iwxreg.h`
 | `6b0d9cf` | **Milestone build**: UMAC scan v17, MLD-gated init_hw, MLD cmd responses in rx_pkt. |
 | `413a70d` | MLD command builders (PHY v4, RLC, MAC/LINK/STA, SCD v3, BAID, SEC_KEY). |
 | `fc062b9` | **Milestone build**: association via MLD API (auth/deauth/run, queues, BA, keys, stats). |
-| (this commit, see `git log`) | **Milestone build**: data path review (EAPOL high-prio), MLD-only gating of stats/bmiss/channel-switch, status + risks + test checklist in this file. |
+| `1751ebb` | **Milestone build**: data path review (EAPOL high-prio), MLD-only gating of stats/bmiss/channel-switch, status + risks + test checklist in this file. |
+
+| `614f5e4` | ALIVE wait checks the flag first (MA only). |
+| (latest, see `git log`) | **Milestone build**: TLV parser capa-index fix (A0) — without it no build before this one could load the -89 firmware. |
 
 **Driver logic for this card is now ported but completely untested on hardware.** Everything below "done" means "compiles locally (clang -fsyntax-only) and follows OpenBSD r1.230"; CI is the real compiler.
 
@@ -103,6 +106,7 @@ Status: `ok` = itlwm already equivalent, `todo`, `done` = ported (compiled, unte
 | A12 | MCC_UPDATE rsp v6 → use `iwx_mcc_update_resp_v4` when CAPA 89 (MCC_UPDATE_11AX) is set; reject resp ver ≥ 8 | `iwx_send_update_mcc_cmd` 9972 | `iwx_send_update_mcc_cmd` 9961 (old struct only → EIO → init fails) | P0 | done (untested) |
 | A13 | SCAN_CFG reduced: bcast_sta_id=0xff only if SCAN_CFG ver < 5 / unknown | `iwx_config_umac_scan_reduced` 7473 | `iwx_config_umac_scan` 7540 (keys off ADD_STA ver → AUX_STA_ID) | P1 | done (untested) |
 | A14 | rate_n_flags version from TX_CMD notif ver (>6 → v2) | `iwx_post_alive` 3062 | n/a (tx_fill_cmd keys off TX cmd ver > 8, equivalent for mgmt) | P1 | done (sc_rate_n_flags_version set; TX path keys off TX_CMD ver > 8, equivalent) |
+| A0 | **TLV parse must not stop early**: the -89 image sends ENABLED_CAPABILITIES index 4 (bit 129) right after CMD_VERSIONS; itlwm's `IWX_NUM_UCODE_TLV_CAPA` was 128, so the parser hit `goto parse_out` with err 0 and silently dropped every later TLV (all 60 SEC_RT sections, IML, N_SCAN_CHANNELS, ...). Also 60 SEC_RT sections = itlwm's old `IWX_UCODE_SECT_MAX` (no margin) | `IWX_NUM_UCODE_TLV_CAPA` 160, `IWX_UCODE_SECT_MAX` 69 | `if_iwxreg.h`, `if_iwxvar.h` | P0 | done (verified against the TLV order of a linux-firmware -89 image) |
 | A15 | RX notif handling for new groups (STATISTICS 0x10 oper notifs, SYSTEM 0xfc, DATA_PATH 0xf8, BT_COEX PROFILE, MLD cmd responses copied to resp buffer) | `iwx_rx_pkt` 11250-11400 | missing → "unhandled firmware response" + no resp copy for MLD cmds | P0 (resp copy) | done (untested) |
 
 ### B. Scan

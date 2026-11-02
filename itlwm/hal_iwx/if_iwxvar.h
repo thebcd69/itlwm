@@ -224,7 +224,7 @@ struct iwx_tx_radiotap_header {
 	 (1 << IEEE80211_RADIOTAP_RATE) |				\
 	 (1 << IEEE80211_RADIOTAP_CHANNEL))
 
-#define IWX_UCODE_SECT_MAX 60
+#define IWX_UCODE_SECT_MAX 69 /* MTL: OpenBSD r1.230; -89 has exactly 60 SEC_RT sections */
 
 /*
  * fw_status is used to determine if we've already parsed the firmware file
