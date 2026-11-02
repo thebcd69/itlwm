@@ -3463,9 +3463,23 @@ iwx_enable_txq(struct iwx_softc *sc, int sta_id, int qid, int tid,
     int err, fwqid;
     uint32_t wr_idx;
     size_t resp_len;
+    struct iwx_scd_queue_cfg_cmd cmd_v3;
+    int scd_v3 = sc->sc_use_mld_api && iwx_scd_queue_cfg_v3_supported(sc);
     
     iwx_reset_tx_ring(sc, ring);
     
+    if (scd_v3) {
+        /* MTL (OpenBSD r1.230): TX_QUEUE_CFG_CMD_API_S_VER_3 */
+        if (iwx_lookup_cmd_ver(sc, IWX_DATA_PATH_GROUP,
+                               IWX_SCD_QUEUE_CONFIG_CMD) != 3) {
+            XYLog("%s: unsupported SCD_QUEUE_CFG command version %d\n",
+                  DEVNAME(sc), iwx_lookup_cmd_ver(sc, IWX_DATA_PATH_GROUP,
+                                                  IWX_SCD_QUEUE_CONFIG_CMD));
+            return ENOTSUP;
+        }
+        iwx_scd_queue_cfg_v3_fill(sc, &cmd_v3, &hcmd, 1, sta_id, tid,
+                                  ring, num_slots);
+    } else {
     memset(&cmd, 0, sizeof(cmd));
     cmd.sta_id = sta_id;
     cmd.tid = tid;
@@ -3476,8 +3490,12 @@ iwx_enable_txq(struct iwx_softc *sc, int sta_id, int qid, int tid,
     
     hcmd.data[0] = &cmd;
     hcmd.len[0] = sizeof(cmd);
+    }
     
     err = iwx_send_cmd(sc, &hcmd);
+    if (scd_v3)
+        XYLog("MTL: SCD_QUEUE_CONFIG v3 add qid %d sta %d tid %d slots %d -> %d\n",
+              qid, sta_id, tid, num_slots, err);
     if (err)
         return err;
     
@@ -3499,6 +3517,9 @@ iwx_enable_txq(struct iwx_softc *sc, int sta_id, int qid, int tid,
     fwqid = le16toh(resp->queue_number);
     wr_idx = le16toh(resp->write_pointer);
     
+    if (scd_v3)
+        XYLog("MTL: SCD_QUEUE_CONFIG v3 fw assigned qid %d wr_idx %u (requested %d)\n",
+              fwqid, wr_idx, qid);
     /* Unlike iwlwifi, we do not support dynamic queue ID assignment. */
     if (fwqid != qid) {
         DPRINTF(("requested qid %d but %d was assigned\n", qid, fwqid));
@@ -3562,6 +3583,7 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
         .flags = IWX_CMD_WANT_RESP,
         .resp_pkt_len = sizeof(*pkt) + sizeof(*resp),
     };
+    struct iwx_scd_queue_cfg_cmd cmd_v3;
     struct iwx_tx_ring *ring = &sc->sc_tvqm_ring;
     
     memset(ring, 0, sizeof(*ring));
@@ -3618,10 +3640,20 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
 
     hcmd.data[0] = &cmd;
     hcmd.len[0] = sizeof(cmd);
+    
+    if (sc->sc_use_mld_api && iwx_scd_queue_cfg_v3_supported(sc))
+        /* MTL: TX_QUEUE_CFG_CMD_API_S_VER_3, firmware picks the queue */
+        iwx_scd_queue_cfg_v3_fill(sc, &cmd_v3, &hcmd, 1, IWX_STATION_ID,
+                                  tid, ring, ring->ring_count);
 
     err = iwx_send_cmd(sc, &hcmd);
-    if (err)
+    if (sc->sc_use_mld_api)
+        XYLog("MTL: SCD_QUEUE_CONFIG (tvqm) add tid %d size %u -> %d\n", tid, size, err);
+    if (err) {
+        if (sc->sc_use_mld_api)
+            goto fail;
         return err;
+    }
 
     pkt = hcmd.resp_pkt;
     if (!pkt || (pkt->hdr.group_id & IWX_CMD_FAILED_MSK)) {
@@ -4305,6 +4337,13 @@ iwx_sta_rx_agg(struct iwx_softc *sc, struct ieee80211_node *ni, uint8_t tid,
     struct iwx_rxba_data *rxba = NULL;
     uint8_t baid = 0;
     
+    /* MTL (OpenBSD r1.230): BAIDs are allocated with a separate command. */
+    if (isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_BAID_ML_SUPPORT) &&
+        sc->sc_use_mld_api) {
+        iwx_mld_sta_rx_agg(sc, ni, tid, ssn, winsize, timeout_val, start);
+        return;
+    }
+    
     s = splnet();
     
     if (start && sc->sc_rx_ba_sessions >= IWX_MAX_RX_BA_SESSIONS) {
@@ -4567,7 +4606,19 @@ iwx_ba_task(void *arg)
                 err = -1;
                 goto out;
             }
-            if ((qid = that->iwx_tvqm_alloc_txq(sc, tid, ba->ba_winstart)) < 0) {
+            if (sc->sc_use_mld_api &&
+                sc->sc_tid_data[tid].qid != 0 &&
+                sc->sc_tid_data[tid].qid != IWX_INVALID_QUEUE &&
+                sc->sc_tid_data[tid].qid < nitems(sc->txq) &&
+                sc->txq[sc->sc_tid_data[tid].qid].ring_count != 0) {
+                /*
+                 * MTL (OpenBSD r1.230 iwx_sta_tx_agg_start): with the
+                 * SCD_QUEUE_CONFIG v3 API the per-TID queue stays
+                 * allocated in firmware until the station is removed;
+                 * reuse it instead of adding a second queue for the TID.
+                 */
+                qid = sc->sc_tid_data[tid].qid;
+            } else if ((qid = that->iwx_tvqm_alloc_txq(sc, tid, ba->ba_winstart)) < 0) {
                 err = -1;
                 goto out;
             }
@@ -4675,7 +4726,9 @@ iwx_ampdu_tx_stop(struct ieee80211com *ic, struct ieee80211_node *ni, uint8_t ti
         return;
     }
 
-    sc->sc_tid_data[tid].qid = IWX_INVALID_QUEUE;
+    /* MTL: keep the firmware queue (SCD v3); iwx_tx() checks ba_state. */
+    if (!sc->sc_use_mld_api)
+        sc->sc_tid_data[tid].qid = IWX_INVALID_QUEUE;
     ic->ic_stats.is_ht_tx_ba_agreements--;
 }
 
@@ -6202,6 +6255,10 @@ iwx_binding_cmd(struct iwx_softc *sc, struct iwx_node *in, uint32_t action)
     int i, err, active = (sc->sc_flags & IWX_FLAG_BINDING_ACTIVE);
     uint32_t status;
     
+    /* MTL (OpenBSD r1.230): No need to bind with MLD firmware. */
+    if (sc->sc_use_mld_api)
+        return 0;
+    
     if (action == IWX_FW_CTXT_ACTION_ADD && active) {
         XYLog("binding already added\n");
         return 0;
@@ -6413,6 +6470,10 @@ iwx_phy_ctxt_cmd(struct iwx_softc *sc, struct iwx_phy_ctxt *ctxt,
     struct iwx_phy_context_cmd_v1 cmd;
     uint8_t active_cnt, idle_cnt;
     struct ieee80211_channel *chan = ctxt->channel;
+    
+    if (sc->sc_use_mld_api)
+        return iwx_mld_phy_ctxt_cmd(sc, ctxt, chains_static,
+                                    chains_dynamic, action);
     
     if (iwx_lookup_cmd_ver(sc, IWX_LONG_GROUP, IWX_PHY_CONTEXT_CMD) == 3)
         return iwx_phy_ctxt_cmd_v3(sc, ctxt, chains_static,
@@ -7171,6 +7232,10 @@ iwx_drain_sta(struct iwx_softc *sc, struct iwx_node* in, int drain)
     int err;
     uint32_t status;
     
+    /* MTL (OpenBSD r1.230): No need to drain with MLD firmware. */
+    if (sc->sc_use_mld_api)
+        return 0;
+    
     memset(&cmd, 0, sizeof(cmd));
     cmd.mac_id_n_color = htole32(IWX_FW_CMD_ID_AND_COLOR(in->in_id,
                                                          in->in_color));
@@ -7346,6 +7411,9 @@ iwx_add_sta_cmd(struct iwx_softc *sc, struct iwx_node *in, int update)
         return 0;
     }
     
+    if (sc->sc_use_mld_api)
+        return iwx_mld_add_sta_cmd(sc, in, update);
+    
     memset(&add_sta_cmd, 0, sizeof(add_sta_cmd));
     
     if (ic->ic_opmode == IEEE80211_M_MONITOR) {
@@ -7502,6 +7570,12 @@ iwx_rm_sta_cmd(struct iwx_softc *sc, struct iwx_node *in)
         return 0;
     }
     
+    if (sc->sc_use_mld_api) {
+        err = iwx_mld_rm_sta_cmd(sc, in);
+        sc->sc_flags &= ~IWX_FLAG_STA_ACTIVE;
+        return err;
+    }
+    
     memset(&rm_sta_cmd, 0, sizeof(rm_sta_cmd));
     if (ic->ic_opmode == IEEE80211_M_MONITOR)
         rm_sta_cmd.sta_id = IWX_MONITOR_STA_ID;
@@ -7529,6 +7603,30 @@ iwx_rm_sta(struct iwx_softc *sc, struct iwx_node *in)
             __FUNCTION__, err);
         return err;
     }
+    
+    /*
+     * MTL (OpenBSD r1.230): New SCD_QUEUE_CONFIG API requires explicit
+     * queue removal before a station gets removed.
+     */
+    if (sc->sc_use_mld_api && iwx_scd_queue_cfg_v3_supported(sc)) {
+        err = iwx_disable_mgmt_queue(sc);
+        if (err)
+            return err;
+        for (i = 0; i < IWX_MAX_TID_COUNT; i++) {
+            int aqid = sc->sc_tid_data[i].qid;
+            if (aqid == 0 || aqid == IWX_INVALID_QUEUE ||
+                aqid >= nitems(sc->txq) || aqid == sc->first_data_qid)
+                continue;
+            err = iwx_disable_txq(sc, IWX_STATION_ID, aqid, i);
+            if (err) {
+                XYLog("%s: could not disable Tx queue %d "
+                      "(error %d)\n", DEVNAME(sc), aqid, err);
+                return err;
+            }
+            sc->sc_tid_data[i].qid = IWX_INVALID_QUEUE;
+        }
+    }
+    
     err = iwx_rm_sta_cmd(sc, in);
     if (err) {
         printf("%s: could not remove STA (error %d)\n",
@@ -9470,6 +9568,9 @@ iwx_mac_ctxt_cmd(struct iwx_softc *sc, struct iwx_node *in, uint32_t action,
         return 0;
     }
     
+    if (sc->sc_use_mld_api)
+        return iwx_mld_mac_ctxt_cmd(sc, in, action, assoc);
+    
     memset(&cmd, 0, sizeof(cmd));
     
     iwx_mac_ctxt_cmd_common(sc, in, &cmd, action);
@@ -9505,6 +9606,45 @@ iwx_mac_ctxt_cmd(struct iwx_softc *sc, struct iwx_node *in, uint32_t action,
 int ItlIwx::
 iwx_clear_statistics(struct iwx_softc *sc)
 {
+    uint32_t version;
+    
+    /* MTL (OpenBSD r1.230): -77+ firmware only has SYSTEM_STATISTICS_CMD. */
+    version = iwx_lookup_cmd_ver(sc, IWX_SYSTEM_GROUP,
+                                 IWX_SYSTEM_STATISTICS_CMD);
+    if (version == 1) {
+        struct iwx_system_statistics_cmd sscmd = {
+            .cfg_mask = htole32(IWX_STATS_CFG_FLG_ON_DEMAND_NTFY_MSK),
+            .type_id_mask = htole32(IWX_STATS_NTFY_TYPE_ID_OPER |
+                                    IWX_STATS_NTFY_TYPE_ID_OPER_PART1),
+        };
+        struct iwx_host_cmd shcmd = {
+            .id = IWX_WIDE_ID(IWX_SYSTEM_GROUP, IWX_SYSTEM_STATISTICS_CMD),
+            .len = { sizeof(sscmd), },
+            .data = { &sscmd, },
+            .flags = IWX_CMD_ASYNC,
+        };
+        int serr;
+        
+        sc->sc_system_stats_cleared = 0;
+        serr = iwx_send_cmd(sc, &shcmd);
+        if (serr == 0) {
+            /* Wait for SYSTEM_STATISTICS_END_NOTIF firmware notification. */
+            while (!sc->sc_system_stats_cleared) {
+                serr = tsleep_nsec(&sc->sc_system_stats_cleared, 0, "iwxstat",
+                                   SEC_TO_NSEC(1));
+                if (serr)
+                    break;
+            }
+        }
+        XYLog("MTL: SYSTEM_STATISTICS v1 clear -> %d (end notif %d)\n",
+              serr, sc->sc_system_stats_cleared);
+        return serr;
+    } else if (version != IWX_FW_CMD_VER_UNKNOWN) {
+        XYLog("%s: unknown statistics command version %d\n",
+              DEVNAME(sc), version);
+        return 0;
+    }
+    
     struct iwx_statistics_cmd scmd = {
         .flags = htole32(IWX_STATISTICS_FLG_CLEAR)
     };
@@ -9710,7 +9850,13 @@ iwx_enable_mgmt_queue(struct iwx_softc *sc)
     int cmdver;
 
     cmdver = iwx_lookup_cmd_ver(sc, IWX_LONG_GROUP, IWX_ADD_STA);
-    if (cmdver != IWX_FW_CMD_VER_UNKNOWN && cmdver >= 12)
+    if (sc->sc_use_mld_api)
+        /*
+         * MTL (OpenBSD r1.230): Non-QoS frames use the "MGMT" TID and
+         * the first queue after the command queue.
+         */
+        sc->first_data_qid = IWX_DQA_CMD_QUEUE + 1;
+    else if (cmdver != IWX_FW_CMD_VER_UNKNOWN && cmdver >= 12)
         sc->first_data_qid = IWX_QID_MGMT - 1;
     else
         sc->first_data_qid = IWX_QID_MGMT;
@@ -10182,6 +10328,12 @@ iwx_phy_ctxt_update(struct iwx_softc *sc, struct iwx_phy_ctxt *phyctxt,
     uint16_t band_flags = (IEEE80211_CHAN_2GHZ | IEEE80211_CHAN_5GHZ);
     int err;
     
+    if (sc->sc_use_mld_api && !(sc->sc_flags & IWX_FLAG_PHY_ACTIVE)) {
+        /* MTL: PHY context only exists in firmware between auth and deauth. */
+        phyctxt->channel = chan;
+        return 0;
+    }
+    
     if (isset(sc->sc_enabled_capa,
               IWX_UCODE_TLV_CAPA_BINDING_CDB_SUPPORT) &&
         (phyctxt->channel->ic_flags & band_flags) !=
@@ -10212,6 +10364,219 @@ iwx_phy_ctxt_update(struct iwx_softc *sc, struct iwx_phy_ctxt *phyctxt,
         }
     }
     
+    /* MTL (OpenBSD r1.230): RX chains are configured via RLC_CONFIG v2. */
+    if (sc->sc_use_mld_api &&
+        iwx_lookup_cmd_ver(sc, IWX_DATA_PATH_GROUP, IWX_RLC_CONFIG_CMD) == 2)
+        return iwx_phy_send_rlc(sc, phyctxt, chains_static, chains_dynamic);
+    
+    return 0;
+}
+
+/*
+ * MTL: auth/deauth with the MLD firmware API, following OpenBSD r1.230
+ * iwx_auth()/iwx_deauth(): the PHY context is added here (not at init),
+ * RLC_CONFIG v2 configures RX chains, there is no binding, and the
+ * station is created with LINK_CONFIG + STA_CONFIG.
+ */
+int ItlIwx::
+iwx_mld_session_protection(struct iwx_softc *sc, struct iwx_node *in,
+                           uint32_t duration_tu, int remove)
+{
+    struct iwx_session_prot_cmd cmd;
+    int err;
+    
+    if (remove && (sc->sc_flags & IWX_FLAG_TE_ACTIVE) == 0)
+        return 0;
+    
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.id_and_color = htole32(IWX_FW_CMD_ID_AND_COLOR(in->in_id,
+                                                       in->in_color));
+    cmd.action = htole32(remove ? IWX_FW_CTXT_ACTION_REMOVE :
+                         IWX_FW_CTXT_ACTION_ADD);
+    cmd.conf_id = htole32(IWX_SESSION_PROTECT_CONF_ASSOC);
+    cmd.duration_tu = htole32(remove ? 0 : duration_tu);
+    
+    err = iwx_send_cmd_pdu(sc, iwx_cmd_id(IWX_SESSION_PROTECTION_CMD,
+                                          IWX_MAC_CONF_GROUP, 0), 0, sizeof(cmd), &cmd);
+    XYLog("MTL: SESSION_PROTECTION v%d %s duration %u TU -> %d\n",
+          iwx_lookup_cmd_ver(sc, IWX_MAC_CONF_GROUP, IWX_SESSION_PROTECTION_CMD),
+          remove ? "remove" : "add", duration_tu, err);
+    if (err == 0) {
+        if (remove)
+            sc->sc_flags &= ~IWX_FLAG_TE_ACTIVE;
+        else
+            sc->sc_flags |= IWX_FLAG_TE_ACTIVE;
+    }
+    return err;
+}
+
+int ItlIwx::
+iwx_mld_auth(struct iwx_softc *sc)
+{
+    struct ieee80211com *ic = &sc->sc_ic;
+    struct iwx_node *in = (struct iwx_node *)ic->ic_bss;
+    uint32_t duration;
+    int generation = sc->sc_generation, err = 0;
+    
+    XYLog("MTL: auth (MLD) bssid %s chan %d\n", ether_sprintf(in->in_ni.ni_macaddr),
+          ieee80211_chan2ieee(ic, in->in_ni.ni_chan));
+    
+    in->in_ni.ni_chw = IEEE80211_CHAN_WIDTH_20_NOHT;
+    in->in_ni.ni_flags &= ~(IEEE80211_NODE_HT |
+                            IEEE80211_NODE_QOS |
+                            IEEE80211_NODE_HT_SGI20 |
+                            IEEE80211_NODE_HT_SGI40 |
+                            IEEE80211_NODE_VHT |
+                            IEEE80211_NODE_VHT_SGI80 |
+                            IEEE80211_NODE_VHT_SGI160 |
+                            IEEE80211_NODE_HE);
+    
+    if (ic->ic_opmode == IEEE80211_M_MONITOR)
+        sc->sc_phyctxt[0].channel = ic->ic_ibss_chan;
+    else
+        sc->sc_phyctxt[0].channel = in->in_ni.ni_chan;
+    
+    if (sc->sc_flags & IWX_FLAG_PHY_ACTIVE) {
+        /* Left over from an interrupted association; just retune. */
+        err = iwx_phy_ctxt_cmd(sc, &sc->sc_phyctxt[0], 1, 1,
+                               IWX_FW_CTXT_ACTION_MODIFY, 0);
+    } else {
+        err = iwx_phy_ctxt_cmd(sc, &sc->sc_phyctxt[0], 1, 1,
+                               IWX_FW_CTXT_ACTION_ADD, 0);
+    }
+    if (err) {
+        XYLog("%s: could not add phy context (error %d)\n",
+              DEVNAME(sc), err);
+        return err;
+    }
+    sc->sc_flags |= IWX_FLAG_PHY_ACTIVE;
+    
+    if (iwx_lookup_cmd_ver(sc, IWX_DATA_PATH_GROUP,
+                           IWX_RLC_CONFIG_CMD) == 2) {
+        err = iwx_phy_send_rlc(sc, &sc->sc_phyctxt[0], 1, 1);
+        if (err) {
+            XYLog("%s: could not configure RLC for PHY "
+                  "(error %d)\n", DEVNAME(sc), err);
+            goto rm_phy_ctxt;
+        }
+    }
+    
+    in->in_phyctxt = &sc->sc_phyctxt[0];
+    IEEE80211_ADDR_COPY(in->in_macaddr, in->in_ni.ni_macaddr);
+    
+    err = iwx_mac_ctxt_cmd(sc, in, IWX_FW_CTXT_ACTION_ADD, 0);
+    if (err) {
+        XYLog("%s: could not add MAC context (error %d)\n",
+              DEVNAME(sc), err);
+        goto rm_phy_ctxt;
+    }
+    sc->sc_flags |= IWX_FLAG_MAC_ACTIVE;
+    
+    err = iwx_add_sta_cmd(sc, in, 0);
+    if (err) {
+        XYLog("%s: could not add sta (error %d)\n",
+              DEVNAME(sc), err);
+        goto rm_mac_ctxt;
+    }
+    sc->sc_flags |= IWX_FLAG_STA_ACTIVE;
+    
+    if (ic->ic_opmode == IEEE80211_M_MONITOR) {
+        err = iwx_enable_txq(sc, IWX_MONITOR_STA_ID,
+                             IWX_DQA_INJECT_MONITOR_QUEUE, IWX_MGMT_TID,
+                             sc->txq[IWX_DQA_INJECT_MONITOR_QUEUE].ring_count);
+        if (err)
+            goto rm_sta;
+        return 0;
+    }
+    
+    err = iwx_enable_mgmt_queue(sc);
+    if (err)
+        goto rm_sta;
+    
+    err = iwx_clear_statistics(sc);
+    if (err)
+        goto rm_mgmt_queue;
+    
+    /*
+     * Prevent the FW from wandering off channel during association
+     * by "protecting" the session with a time event.
+     */
+    if (in->in_ni.ni_intval)
+        duration = in->in_ni.ni_intval * 9;
+    else
+        duration = 900;
+    return iwx_mld_session_protection(sc, in, duration, 0);
+    
+rm_mgmt_queue:
+    if (generation == sc->sc_generation)
+        iwx_disable_mgmt_queue(sc);
+rm_sta:
+    if (generation == sc->sc_generation) {
+        iwx_rm_sta_cmd(sc, in);
+        sc->sc_flags &= ~IWX_FLAG_STA_ACTIVE;
+    }
+rm_mac_ctxt:
+    if (generation == sc->sc_generation) {
+        iwx_mac_ctxt_cmd(sc, in, IWX_FW_CTXT_ACTION_REMOVE, 0);
+        sc->sc_flags &= ~IWX_FLAG_MAC_ACTIVE;
+    }
+rm_phy_ctxt:
+    if (generation == sc->sc_generation) {
+        iwx_phy_ctxt_cmd(sc, &sc->sc_phyctxt[0], 1, 1,
+                         IWX_FW_CTXT_ACTION_REMOVE, 0);
+        sc->sc_flags &= ~IWX_FLAG_PHY_ACTIVE;
+    }
+    return err;
+}
+
+int ItlIwx::
+iwx_mld_deauth(struct iwx_softc *sc)
+{
+    struct ieee80211com *ic = &sc->sc_ic;
+    struct iwx_node *in = (struct iwx_node *)ic->ic_bss;
+    int err;
+    
+    XYLog("MTL: deauth (MLD) flags 0x%x\n", sc->sc_flags);
+    
+    iwx_mld_session_protection(sc, in, 0, 1);
+    
+    if (sc->sc_flags & IWX_FLAG_STA_ACTIVE) {
+        err = iwx_rm_sta(sc, in);
+        if (err)
+            return err;
+        sc->sc_flags &= ~IWX_FLAG_STA_ACTIVE;
+    }
+    
+    if (sc->sc_flags & IWX_FLAG_MAC_ACTIVE) {
+        err = iwx_mac_ctxt_cmd(sc, in, IWX_FW_CTXT_ACTION_REMOVE, 0);
+        if (err) {
+            XYLog("%s: could not remove MAC context (error %d)\n",
+                  DEVNAME(sc), err);
+            return err;
+        }
+        sc->sc_flags &= ~IWX_FLAG_MAC_ACTIVE;
+    }
+    
+    if (sc->sc_flags & IWX_FLAG_PHY_ACTIVE) {
+        err = iwx_phy_ctxt_cmd(sc, &sc->sc_phyctxt[0], 1, 1,
+                               IWX_FW_CTXT_ACTION_REMOVE, 0);
+        if (err) {
+            XYLog("%s: could not remove PHY context (error %d)\n",
+                  DEVNAME(sc), err);
+            return err;
+        }
+        sc->sc_flags &= ~IWX_FLAG_PHY_ACTIVE;
+    }
+    
+    in->in_ni.ni_chw = IEEE80211_CHAN_WIDTH_20_NOHT;
+    in->in_ni.ni_flags &= ~(IEEE80211_NODE_HT |
+                            IEEE80211_NODE_QOS |
+                            IEEE80211_NODE_HT_SGI20 |
+                            IEEE80211_NODE_HT_SGI40 |
+                            IEEE80211_NODE_VHT |
+                            IEEE80211_NODE_VHT_SGI80 |
+                            IEEE80211_NODE_VHT_SGI160 |
+                            IEEE80211_NODE_HE);
     return 0;
 }
 
@@ -10225,6 +10590,9 @@ iwx_auth(struct iwx_softc *sc)
     int generation = sc->sc_generation, err = 0;
     
     splassert(IPL_NET);
+    
+    if (sc->sc_use_mld_api)
+        return iwx_mld_auth(sc);
     
     in->in_ni.ni_chw = IEEE80211_CHAN_WIDTH_20_NOHT;
     in->in_ni.ni_flags &= ~(IEEE80211_NODE_HT |
@@ -10340,6 +10708,9 @@ iwx_deauth(struct iwx_softc *sc)
     
     splassert(IPL_NET);
     
+    if (sc->sc_use_mld_api)
+        return iwx_mld_deauth(sc);
+    
     if (!isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_SESSION_PROT_CMD))
         iwx_unprotect_session(sc, in);
     else
@@ -10426,6 +10797,22 @@ iwx_run(struct iwx_softc *sc)
         }
     }
     
+    if (sc->sc_use_mld_api && ic->ic_opmode != IEEE80211_M_MONITOR) {
+        /*
+         * MTL (OpenBSD r1.230 iwx_run): update STA (and its link:
+         * protection, QoS, beacon timing) before marking the MAC
+         * associated.
+         */
+        in->in_ni.ni_txrate = 0;
+        in->in_ni.ni_txmcs = 0;
+        err = iwx_add_sta_cmd(sc, in, 1);
+        if (err) {
+            XYLog("%s: could not update STA (error %d)\n",
+                  DEVNAME(sc), err);
+            return err;
+        }
+    }
+    
     /* We have now been assigned an associd by the AP. */
     err = iwx_mac_ctxt_cmd(sc, in, IWX_FW_CTXT_ACTION_MODIFY, 1);
     if (err) {
@@ -10489,14 +10876,19 @@ iwx_run(struct iwx_softc *sc)
     in->in_ni.ni_txrate = 0;
     in->in_ni.ni_txmcs = 0;
 
+    if (!sc->sc_use_mld_api) {
     err = iwx_add_sta_cmd(sc, in, 1);
     if (err) {
         XYLog("%s: could not update sta (error %d)\n",
               DEVNAME(sc), err);
         return err;
     }
+    }
     
     err = iwx_rs_init(sc, in, true);
+    if (sc->sc_use_mld_api)
+        XYLog("MTL: TLC_MNG_CONFIG v%d -> %d\n",
+              iwx_lookup_cmd_ver(sc, IWX_DATA_PATH_GROUP, IWX_TLC_MNG_CONFIG_CMD), err);
     if (err) {
         XYLog("%s: could not update rate scaling (error %d)\n",
               DEVNAME(sc), err);
@@ -10596,6 +10988,13 @@ iwx_set_key(struct ieee80211com *ic, struct ieee80211_node *ni,
         return (ieee80211_set_key(ic, ni, k));
     }
     
+    if (sc->sc_use_mld_api) {
+        uint8_t sec_key_ver = that->iwx_lookup_cmd_ver(sc, IWX_DATA_PATH_GROUP,
+                                                       IWX_SEC_KEY_CMD);
+        if (sec_key_ver != 0 && sec_key_ver != IWX_FW_CMD_VER_UNKNOWN)
+            return that->iwx_mld_set_sta_key_cmd(sc, IWX_STATION_ID, ni, k, 0);
+    }
+    
     memset(&cmd, 0, sizeof(cmd));
     
     cmd.common.key_flags = htole16(IWX_STA_KEY_FLG_CCM |
@@ -10629,6 +11028,17 @@ iwx_delete_key(struct ieee80211com *ic, struct ieee80211_node *ni,
         /* Fallback to software crypto for other ciphers. */
         ieee80211_delete_key(ic, ni, k);
         return;
+    }
+    
+    if (sc->sc_use_mld_api) {
+        uint8_t sec_key_ver = that->iwx_lookup_cmd_ver(sc, IWX_DATA_PATH_GROUP,
+                                                       IWX_SEC_KEY_CMD);
+        if ((sc->sc_flags & IWX_FLAG_STA_ACTIVE) == 0)
+            return;
+        if (sec_key_ver != 0 && sec_key_ver != IWX_FW_CMD_VER_UNKNOWN) {
+            that->iwx_mld_set_sta_key_cmd(sc, IWX_STATION_ID, ni, k, 1);
+            return;
+        }
     }
     
     memset(&cmd, 0, sizeof(cmd));
@@ -11538,6 +11948,7 @@ iwx_stop(struct _ifnet *ifp)
     sc->sc_flags &= ~IWX_FLAG_HW_ERR;
     sc->sc_flags &= ~IWX_FLAG_SHUTDOWN;
     sc->sc_flags &= ~IWX_FLAG_TXFLUSH;
+    sc->sc_flags &= ~IWX_FLAG_PHY_ACTIVE;
 
     sc->sc_rx_ba_sessions = 0;
     sc->ba_rx.start_tidmask = 0;
@@ -12283,9 +12694,16 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
                 IWX_THERMAL_DUAL_CHAIN_REQUEST):
             case IWX_WIDE_ID(IWX_DATA_PATH_GROUP, 0xf8):
             case IWX_WIDE_ID(IWX_SYSTEM_GROUP, 0xfc):
-            case IWX_WIDE_ID(IWX_SYSTEM_GROUP, IWX_SYSTEM_STATISTICS_CMD):
             case IWX_WIDE_ID(IWX_SYSTEM_GROUP,
-                IWX_SYSTEM_STATISTICS_END_NOTIF):
+                IWX_SYSTEM_STATISTICS_END_NOTIF): {
+                struct iwx_system_statistics_end_notif *snotif;
+                SYNC_RESP_STRUCT(snotif, pkt, struct iwx_system_statistics_end_notif *);
+                sc->sc_system_stats_cleared = 1;
+                wakeupOn(&sc->sc_system_stats_cleared);
+                break;
+            }
+                
+            case IWX_WIDE_ID(IWX_SYSTEM_GROUP, IWX_SYSTEM_STATISTICS_CMD):
             case IWX_WIDE_ID(IWX_STATISTICS_GROUP,
                 IWX_STATISTICS_OPER_NOTIF):
             case IWX_WIDE_ID(IWX_STATISTICS_GROUP,

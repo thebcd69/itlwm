@@ -111,20 +111,20 @@ Status: `ok` = itlwm already equivalent, `todo`, `done` = ported (compiled, unte
 
 | # | Requirement | OpenBSD | itlwm | Prio | Status |
 |---|---|---|---|---|---|
-| C1 | PHY ctxt v4 ADD in auth (not at init), REMOVE in deauth; RLC_CONFIG v2 after every PHY ctxt add/modify | `iwx_auth` 8970, `iwx_phy_ctxt_update` 8917, `iwx_phy_send_rlc` 8893 | PHY added at init, MODIFY in auth; no RLC | P0 | todo |
-| C2 | MAC_CONFIG_CMD v2 (`iwx_mac_config_cmd`) instead of MAC_CONTEXT_CMD | `iwx_mld_mac_ctxt_cmd` 8108 | `iwx_mac_ctxt_cmd` 8395 | P0 | todo |
-| C3 | No BINDING with MLD | `iwx_binding_cmd` 5586 | `iwx_binding_cmd` 6018 | P0 | todo |
-| C4 | LINK_CONFIG v2 add + modify (rates, EDCA, protection, beacon timing) | `iwx_mld_modify_link_fill` 6954 | missing | P0 | todo |
-| C5 | STA_CONFIG (not in CMD_VERSIONS → v1 size `iwx_mvm_sta_cfg_cmd`) / STA_REMOVE + link deactivate/remove | `iwx_mld_add_sta_cmd` 7039, `iwx_mld_rm_sta_cmd` 7254 | `iwx_add_sta_cmd` 7157 (ADD_STA) | P0 | todo |
-| C6 | No aux STA (scan uses no STA with reduced scan cfg v5+) | — | `iwx_add_aux_sta` 7275 called from init_hw | P0 | todo (skip) |
-| C7 | Session protection v2 with id_and_color | `iwx_schedule_session_protection` 3078 | `iwx_schedule_protect_session` 3617 | P1 | check/ok |
-| C8 | SEC_KEY_CMD v1 (sta_mask) for CCMP pairwise/group, IGTK | `iwx_mld_set_sta_key_cmd` 9351, `iwx_add_sta_key` 9513, `iwx_delete_key` 9590 | `iwx_set_key` 9526 (ADD_STA_KEY) | P0 (WPA2) | todo |
-| C9 | SCD_QUEUE_CONFIG v3 (ADD/REMOVE with sta_mask) for mgmt queue (qid 1) and agg queues; explicit removal before STA remove | `iwx_enable_txq` 2914, `iwx_disable_txq` 3003, `iwx_enable_mgmt_queue` 8475, `iwx_rm_sta` 7187 | `iwx_enable_txq` 3306, `iwx_tvqm_enable_txq` 3402 (legacy SCD_QUEUE_CFG) | P0 | todo |
-| C10 | RX BAID alloc v2 (`RX_BAID_ALLOCATION_CONFIG_CMD`, sta_mask) instead of ADD_STA BA fields | `iwx_sta_rx_agg_baid_cfg_cmd` 3436, `iwx_sta_rx_agg` 3546 | `iwx_sta_rx_agg` 4144 (ADD_STA) | P1 | todo |
-| C11 | TLC v4 | `iwx_rs_init_v4` 8692 | `iwx_rs_init` 8891 (v4 struct already) | P1 | check |
-| C12 | run(): STA update before MAC modify(assoc=1); run_stop: no quotas / binding | `iwx_run` 9139, `iwx_run_stop` 9260 | `iwx_run` 9332 (quotas only if !DYNAMIC_QUOTA → capa set, skipped) | P1 | todo (order under MLD) |
-| C13 | Flush: TXPATH_FLUSH v? / no drain with MLD | `iwx_drain_sta` 6540, `iwx_flush_sta` 6581 | `iwx_drain_sta` 6989 (ADD_STA) | P1 | todo |
-| C14 | Beacon filter / power table | `iwx_set_pslevel` 6700, `iwx_disable_beacon_filter` 6808 | `iwx_power_update_device`, `iwx_power_mac_update_mode` | P2 | check |
+| C1 | PHY ctxt v4 ADD in auth (not at init), REMOVE in deauth; RLC_CONFIG v2 after every PHY ctxt add/modify | `iwx_auth` 8970, `iwx_phy_ctxt_update` 8917, `iwx_phy_send_rlc` 8893 | PHY added at init, MODIFY in auth; no RLC | P0 | done (untested) |
+| C2 | MAC_CONFIG_CMD v2 (`iwx_mac_config_cmd`) instead of MAC_CONTEXT_CMD | `iwx_mld_mac_ctxt_cmd` 8108 | `iwx_mac_ctxt_cmd` 8395 | P0 | done (untested) |
+| C3 | No BINDING with MLD | `iwx_binding_cmd` 5586 | `iwx_binding_cmd` 6018 | P0 | done (untested) |
+| C4 | LINK_CONFIG v2 add + modify (rates, EDCA, protection, beacon timing) | `iwx_mld_modify_link_fill` 6954 | missing | P0 | done (untested) |
+| C5 | STA_CONFIG (not in CMD_VERSIONS → v1 size `iwx_mvm_sta_cfg_cmd`) / STA_REMOVE + link deactivate/remove | `iwx_mld_add_sta_cmd` 7039, `iwx_mld_rm_sta_cmd` 7254 | `iwx_add_sta_cmd` 7157 (ADD_STA) | P0 | done (untested) |
+| C6 | No aux STA (scan uses no STA with reduced scan cfg v5+) | — | `iwx_add_aux_sta` 7275 called from init_hw | P0 | done (untested) |
+| C7 | Session protection v2 with id_and_color | `iwx_schedule_session_protection` 3078 | `iwx_schedule_protect_session` 3617 | P1 | done: MLD path sends duration in TU (itlwm legacy path multiplies by 1024) |
+| C8 | SEC_KEY_CMD v1 (sta_mask) for CCMP pairwise/group, IGTK | `iwx_mld_set_sta_key_cmd` 9351, `iwx_add_sta_key` 9513, `iwx_delete_key` 9590 | `iwx_set_key` 9526 (ADD_STA_KEY) | P0 (WPA2) | done (untested) |
+| C9 | SCD_QUEUE_CONFIG v3 (ADD/REMOVE with sta_mask) for mgmt queue (qid 1) and agg queues; explicit removal before STA remove | `iwx_enable_txq` 2914, `iwx_disable_txq` 3003, `iwx_enable_mgmt_queue` 8475, `iwx_rm_sta` 7187 | `iwx_enable_txq` 3306, `iwx_tvqm_enable_txq` 3402 (legacy SCD_QUEUE_CFG) | P0 | done (untested) |
+| C10 | RX BAID alloc v2 (`RX_BAID_ALLOCATION_CONFIG_CMD`, sta_mask) instead of ADD_STA BA fields | `iwx_sta_rx_agg_baid_cfg_cmd` 3436, `iwx_sta_rx_agg` 3546 | `iwx_sta_rx_agg` 4144 (ADD_STA) | P1 | done (untested) |
+| C11 | TLC v4 | `iwx_rs_init_v4` 8692 | `iwx_rs_init` 8891 (v4 struct already) | P1 | ok (itlwm already sends v4 when advertised) |
+| C12 | run(): STA update before MAC modify(assoc=1); run_stop: no quotas / binding | `iwx_run` 9139, `iwx_run_stop` 9260 | `iwx_run` 9332 (quotas only if !DYNAMIC_QUOTA → capa set, skipped) | P1 | done (untested) |
+| C13 | Flush: TXPATH_FLUSH v? / no drain with MLD | `iwx_drain_sta` 6540, `iwx_flush_sta` 6581 | `iwx_drain_sta` 6989 (ADD_STA) | P1 | done (untested) |
+| C14 | Beacon filter / power table | `iwx_set_pslevel` 6700, `iwx_disable_beacon_filter` 6808 | `iwx_power_update_device`, `iwx_power_mac_update_mode` | P2 | ok: legacy POWER_TABLE / MAC_PM_POWER_TABLE / BEACON_FILTERING are all in the -89 CMD_VERSIONS |
 
 ### D. Data path
 

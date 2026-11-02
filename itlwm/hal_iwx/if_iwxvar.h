@@ -689,6 +689,7 @@ struct iwx_softc {
     int sc_use_mld_api;
     int sc_rate_n_flags_version;
     uint32_t sc_mtl_scan_count;
+    int sc_system_stats_cleared;
 
 	int sc_intmask;
 	int sc_flags;

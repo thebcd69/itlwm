@@ -426,6 +426,9 @@ public:
                 uint16_t, uint16_t, int, int);
     int     iwx_mld_set_sta_key_cmd(struct iwx_softc *, int, struct ieee80211_node *,
                 struct ieee80211_key *, int);
+    int     iwx_mld_session_protection(struct iwx_softc *, struct iwx_node *, uint32_t, int);
+    int     iwx_mld_auth(struct iwx_softc *);
+    int     iwx_mld_deauth(struct iwx_softc *);
     void    iwx_mcc_update(struct iwx_softc *, struct iwx_mcc_chub_notif *);
     uint8_t    iwx_ridx2rate(struct ieee80211_rateset *, int);
     int    iwx_rval2ridx(int);

@@ -8591,3 +8591,28 @@ struct iwx_phy_context_cmd_mtl_ci_v1 {
 	uint32_t dsp_cfg_flags;
 	uint32_t reserved;
 } __packed; /* PHY_CONTEXT_CMD_API_VER_3, PHY_CONTEXT_CMD_API_VER_4 */
+
+/* SYSTEM_STATISTICS_CMD v1 (OpenBSD r1.230) */
+enum iwx_statistics_notify_type_id {
+	IWX_STATS_NTFY_TYPE_ID_OPER		= (1 << 0),
+	IWX_STATS_NTFY_TYPE_ID_OPER_PART1	= (1 << 1),
+	IWX_STATS_NTFY_TYPE_ID_OPER_PART2	= (1 << 2),
+	IWX_STATS_NTFY_TYPE_ID_OPER_PART3	= (1 << 3),
+	IWX_STATS_NTFY_TYPE_ID_OPER_PART4	= (1 << 4),
+};
+
+enum iwx_statistics_cfg_flags {
+	IWX_STATS_CFG_FLG_DISABLE_NTFY_MSK	= (1 << 0),
+	IWX_STATS_CFG_FLG_ON_DEMAND_NTFY_MSK	= (1 << 1),
+	IWX_STATS_CFG_FLG_RESET_MSK		= (1 << 2),
+};
+
+struct iwx_system_statistics_cmd {
+	uint32_t cfg_mask;
+	uint32_t config_time_sec;
+	uint32_t type_id_mask;
+} __packed; /* STATISTICS_FW_CMD_API_S_VER_1 */
+
+struct iwx_system_statistics_end_notif {
+	uint32_t time_stamp;
+} __packed; /* STATISTICS_FW_NTFY_END_API_S_VER_1 */
