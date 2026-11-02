@@ -81,6 +81,7 @@ void CS35L56Amp::parseBootArgs() {
     noReset = PE_parse_boot_argn("-cs35l56noreset", dummy, sizeof(dummy));
     clkFix = PE_parse_boot_argn("-cs35l56clkfix", dummy, sizeof(dummy));
     codecDump = PE_parse_boot_argn("-cs35l56codecdump", dummy, sizeof(dummy));
+    follow = PE_parse_boot_argn("-cs35l56follow", dummy, sizeof(dummy));
 }
 
 void CS35L56Amp::publish(const char *key, const char *val) { setProperty(key, val); }
@@ -105,8 +106,8 @@ bool CS35L56Amp::start(IOService *provider) {
         return false;
     }
     parseBootArgs();
-    CS_LOG("boot-args: vol=-%d dB spkid=%d dbg=%d noplay=%d noreset=%d clkfix=%d codecdump=%d",
-           volAttenDb, spkIdOverride, dbg, noPlay, noReset, clkFix, codecDump);
+    CS_LOG("boot-args: vol=-%d dB spkid=%d dbg=%d noplay=%d noreset=%d clkfix=%d codecdump=%d follow=%d",
+           volAttenDb, spkIdOverride, dbg, noPlay, noReset, clkFix, codecDump, follow);
     publish("CS35L56-Version", CS35L56_VERSION);
     publish("CS35L56-State", "starting");
 
@@ -241,6 +242,16 @@ bool CS35L56Amp::bringUp() {
         publish("CS35L56-State", "ready-noplay");
         return true;
     }
+    if (follow) {
+        // Linux-like: PLAY on stream start, PAUSE after 3 s idle (followTick()).
+        for (int i = 0; i < 2; i++) amp[i]->logStatus(false);
+        running = true;
+        idleTicks = 0;
+        publish("CS35L56-State", "ready-follow");
+        publishNum("CS35L56-AttenuationDb", (uint64_t)volAttenDb);
+        CS_LOG("both amps patched, follow mode (PLAY with AppleHDA output), amp volume -%d dB", volAttenDb);
+        return true;
+    }
     for (int i = 0; i < 2; i++) {
         int r = amp[i]->play();
         if (r) CS_LOG("%s: play returned %d", names[i], r);
@@ -253,6 +264,39 @@ bool CS35L56Amp::bringUp() {
     publishNum("CS35L56-AttenuationDb", (uint64_t)volAttenDb);
     CS_LOG("both amps patched and in PLAY, amp volume -%d dB", volAttenDb);
     return true;
+}
+
+bool CS35L56Amp::engineRunning() {
+    // IOAudioEngine publishes kIOAudioEngineStateKey ("IOAudioEngineState"): 1 = running.
+    if (!engine) {
+        OSDictionary *m = IOService::serviceMatching("AppleHDAEngineOutput");
+        if (!m) return false;
+        OSIterator *it = IOService::getMatchingServices(m);
+        m->release();
+        if (!it) return false;
+        IOService *s = OSDynamicCast(IOService, it->getNextObject());
+        if (s) { s->retain(); engine = s; CS_LOG("follow: watching %s", s->getName()); }
+        it->release();
+        if (!engine) return false;
+    }
+    OSNumber *st = OSDynamicCast(OSNumber, engine->getProperty("IOAudioEngineState"));
+    return st && st->unsigned32BitValue() == 1;
+}
+
+void CS35L56Amp::followTick() {
+    bool on = engineRunning();
+    bool playingNow = amp[0] && amp[0]->isPlaying();
+    if (on) {
+        idleTicks = 0;
+        if (!playingNow) {
+            for (int i = 0; i < 2; i++) amp[i]->play();
+            for (int i = 0; i < 2; i++) amp[i]->setMute(false);
+            if (dbg) CS_LOG("follow: output engine running -> PLAY");
+        }
+    } else if (playingNow && ++idleTicks >= 12) {   // 12 x 250 ms = 3 s (Linux autosuspend delay)
+        for (int i = 0; i < 2; i++) { amp[i]->setMute(true); amp[i]->pause(); }
+        if (dbg) CS_LOG("follow: output idle 3 s -> PAUSE");
+    }
 }
 
 void CS35L56Amp::worker() {
@@ -272,6 +316,11 @@ void CS35L56Amp::worker() {
             hdaOk = hda.init();
             if (hdaOk) { hda.dumpAll(); hda.dumpLive(); }
         }
+    } else if (!asleep && running && follow) {
+        followTick();
+        if ((++ticks % (dbg ? 8 : 40)) == 0)
+            for (int i = 0; i < 2; i++) if (amp[i]) amp[i]->logStatus(!dbg);
+        if (bus[0].errorCount() + bus[1].errorCount() > 50) failAll("too many SPI errors");
     } else if (!asleep && running) {
         ticks++;
         bool verbose = dbg || ticks <= 6;
@@ -289,9 +338,9 @@ void CS35L56Amp::worker() {
         if (bus[0].errorCount() + bus[1].errorCount() > 50) failAll("too many SPI errors");
     }
     static int liveDumps = 0;
-    if (!asleep && hdaOk && !needBringUp && (dbg || liveDumps < 30)) { liveDumps++; hda.dumpLive(); }
+    if (!asleep && hdaOk && !needBringUp && (!follow || (ticks % 8) == 0) && (dbg || liveDumps < 30)) { liveDumps++; hda.dumpLive(); }
     IOLockUnlock(lock);
-    if (!stopping) scheduleWorker(dbg ? 2000 : 10000);
+    if (!stopping) scheduleWorker(follow && running ? 250 : (dbg ? 2000 : 10000));
 }
 
 IOReturn CS35L56Amp::setPowerState(unsigned long state, IOService *) {
@@ -332,6 +381,7 @@ void CS35L56Amp::stop(IOService *provider) {
         IOLockUnlock(lock);
     }
     for (int i = 0; i < 2; i++) { delete amp[i]; amp[i] = nullptr; }
+    if (engine) { engine->release(); engine = nullptr; }
     hda.release();
     spi.release();
     gpio.release();

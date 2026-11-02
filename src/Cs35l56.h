@@ -40,6 +40,7 @@ public:
 
     bool isProbed() const { return probed; }
     bool isPatched() const { return fw_patched; }
+    bool isPlaying() const { return playing; }
     uint8_t rev() const { return revid; }
     bool secured() const { return is_secured; }
     const char *name() const { return amp_name; }

@@ -83,6 +83,11 @@ satırları (pin varsayılanları, bağlantılar) ve ses çalarken `HDA: live DA
 hangi DAC'ın stream aldığını ve 0x14/0x17'nin hangi DAC'a bağlı olduğunu gösterir. Bir test sesi çalarken
 10-20 sn bekle, sonra log'u al.
 
+### 4c. Takip modu (opsiyonel)
+Varsayılan: amfiler açılıştan itibaren sürekli PLAY. `-cs35l56follow` ile Linux gibi davranır: macOS çıkış
+motoru (AppleHDAEngineOutput) çalışınca PLAY, 3 sn sessizlikten sonra PAUSE (+mute). İlk ~250 ms ses
+kırpılabilir. Sürekli PLAY'de cızırtı/pıt sesi ya da ısınma görülürse bunu dene.
+
 ## 5. Ses seviyesi
 - `cs35l56_vol=N` → amfi dijital kazancı -N dB (0..40). Varsayılan 6. **0'ın altına (pozitif kazanç) gidilemez.**
 - Normal kullanım için macOS ses tuşları codec DAC'ını kontrol eder.

@@ -69,6 +69,11 @@ private:
     bool noReset = false;      // -cs35l56noreset
     bool clkFix = false;       // -cs35l56clkfix
     bool codecDump = false;    // -cs35l56codecdump (read-only HDA verbs)
+    bool follow = false;       // -cs35l56follow: PLAY/PAUSE with the AppleHDA output engine
+    int idleTicks = 0;
+    IOService *engine = nullptr;
+    bool engineRunning();
+    void followTick();
     bool hdaOk = false;
     HdaDump hda;
 
