@@ -36,6 +36,9 @@ jobs:
           shasum -a 256 iwlwifi-ma-b0-gf-a0-89.ucode iwlwifi-ma-b0-gf-a0.pnvm
           rm -f ../../include/FwBinary.cpp
 
+      - name: Firmware TLV dump (cmd versions, capa, PNVM SKUs)
+        run: python3 -I scripts/iwx_fw_info.py itlwm/firmware/iwlwifi-ma-b0-gf-a0-89.ucode itlwm/firmware/iwlwifi-ma-b0-gf-a0.pnvm
+
       - name: Build itlwm (Debug)
         run: |
           set -o pipefail
