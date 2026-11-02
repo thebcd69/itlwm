@@ -182,6 +182,7 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
 4. IGTK/BIP stays in software (itlwm never offloaded it); SEC_KEY is used for CCMP pairwise + group keys only.
 5. uAPSD fields of STA_CONFIG are not set (itl80211 has no uAPSD).
 6. Monitor mode under MLD is untested (same code path as OpenBSD).
+8. **HE (11ax) under MLD**: OpenBSD has no 11ax. We set `MAC_CONFIG.he_support` for HE nodes (itlwm's legacy path sets `IWX_MAC_FILTER_IN_11AX`), but LINK_CONFIG HE params (`IWX_LINK_CONTEXT_MODIFY_HE_PARAMS`: bss_color, trig-based EDCA, pkt_ext) and STA_CONFIG `pkt_ext`/`htc_flags` are not filled. If HE associations misbehave while 11ac works, either port Linux `iwl_mvm_mld_link_changed()` HE parts or disable HE under MLD.
 7. Key installation failure: OpenBSD deauths on SEC_KEY failure; itlwm sends keys async so a failure only shows up as a `MTL: SEC_KEY ... -> err` log / fw error.
 
 ### Risks for first hardware boot (most likely first)

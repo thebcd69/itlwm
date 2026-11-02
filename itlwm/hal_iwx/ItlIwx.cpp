@@ -7808,6 +7808,13 @@ iwx_mld_mac_ctxt_cmd(struct iwx_softc *sc, struct iwx_node *in,
     IEEE80211_ADDR_COPY(cmd.local_mld_addr, ic->ic_myaddr);
     cmd.client.assoc_id = htole16(IEEE80211_AID(ni->ni_associd));
     cmd.client.is_assoc = assoc ? 1 : 0;
+    /*
+     * OpenBSD has no 11ax; itlwm negotiates HE, and its legacy MAC
+     * context sets IWX_MAC_FILTER_IN_11AX for HE nodes. The MLD
+     * equivalent is he_support (Linux iwl_mvm_mld_mac_ctxt_cmd_sta).
+     */
+    if (ni->ni_flags & IEEE80211_NODE_HE)
+        cmd.he_support = htole16(1);
     
     cmd.filter_flags = htole32(IWX_MAC_CFG_FILTER_ACCEPT_GRP);
     if (ic->ic_opmode == IEEE80211_M_MONITOR) {
@@ -7827,11 +7834,11 @@ iwx_mld_mac_ctxt_cmd(struct iwx_softc *sc, struct iwx_node *in,
     err = iwx_send_cmd_pdu(sc,
                            IWX_WIDE_ID(IWX_MAC_CONF_GROUP, IWX_MAC_CONFIG_CMD),
                            0, sizeof(cmd), &cmd);
-    XYLog("MTL: MAC_CONFIG v%d %s id %d assoc %d aid %d filter 0x%x -> %d\n",
+    XYLog("MTL: MAC_CONFIG v%d %s id %d assoc %d aid %d filter 0x%x he %d -> %d\n",
           iwx_lookup_cmd_ver(sc, IWX_MAC_CONF_GROUP, IWX_MAC_CONFIG_CMD),
           action == IWX_FW_CTXT_ACTION_ADD ? "add" : "modify",
           in->in_id, assoc, IEEE80211_AID(ni->ni_associd),
-          le32toh(cmd.filter_flags), err);
+          le32toh(cmd.filter_flags), le16toh(cmd.he_support), err);
     return err;
 }
 
