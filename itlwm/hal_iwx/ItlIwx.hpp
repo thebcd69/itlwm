@@ -405,6 +405,27 @@ public:
     void    iwx_scan_umac_fill_general_p_v11(struct iwx_softc *,
                 struct iwx_scan_general_params_v11 *, uint16_t, int);
     int    iwx_umac_scan_v17(struct iwx_softc *, int);
+    /* MTL: MLD firmware API (OpenBSD r1.230) */
+    int     iwx_mld_phy_ctxt_cmd(struct iwx_softc *, struct iwx_phy_ctxt *,
+                uint8_t, uint8_t, uint32_t);
+    int     iwx_phy_send_rlc(struct iwx_softc *, struct iwx_phy_ctxt *, uint8_t, uint8_t);
+    int     iwx_mld_mac_ctxt_cmd(struct iwx_softc *, struct iwx_node *, uint32_t, int);
+    void    iwx_mld_modify_link_fill(struct iwx_softc *, struct iwx_node *,
+                struct iwx_link_config_cmd *, int, int);
+    int     iwx_mld_add_sta_cmd(struct iwx_softc *, struct iwx_node *, int);
+    int     iwx_mld_rm_sta_cmd(struct iwx_softc *, struct iwx_node *);
+    void    iwx_scd_queue_cfg_v3_fill(struct iwx_softc *, struct iwx_scd_queue_cfg_cmd *,
+                struct iwx_host_cmd *, int, int, int, struct iwx_tx_ring *, int);
+    int     iwx_scd_queue_cfg_v3_supported(struct iwx_softc *);
+    int     iwx_disable_txq(struct iwx_softc *, int, int, uint8_t);
+    int     iwx_disable_mgmt_queue(struct iwx_softc *);
+    struct iwx_rxba_data *iwx_find_rxba_data(struct iwx_softc *, uint8_t);
+    int     iwx_sta_rx_agg_baid_cfg_cmd(struct iwx_softc *, struct ieee80211_node *,
+                uint8_t, uint16_t, uint16_t, int, int, uint8_t *);
+    void    iwx_mld_sta_rx_agg(struct iwx_softc *, struct ieee80211_node *, uint8_t,
+                uint16_t, uint16_t, int, int);
+    int     iwx_mld_set_sta_key_cmd(struct iwx_softc *, int, struct ieee80211_node *,
+                struct ieee80211_key *, int);
     void    iwx_mcc_update(struct iwx_softc *, struct iwx_mcc_chub_notif *);
     uint8_t    iwx_ridx2rate(struct ieee80211_rateset *, int);
     int    iwx_rval2ridx(int);

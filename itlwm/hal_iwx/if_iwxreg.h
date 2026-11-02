@@ -8573,3 +8573,21 @@ struct iwx_sec_key_cmd {
 		} __packed remove; /* SEC_KEY_REMOVE_CMD_API_S_VER_1 */
 	} __packed u; /* SEC_KEY_OPERATION_API_U_VER_1 */
 } __packed; /* SEC_KEY_CMD_API_S_VER_1 */
+
+/*
+ * PHY_CONTEXT_CMD v3/v4 with the short (v1) channel info, used when the
+ * firmware lacks CAPA_ULTRA_HB_CHANNELS. This is OpenBSD r1.230's
+ * "struct iwx_phy_context_cmd"; itlwm's struct of that name carries the
+ * long (v2) channel info, i.e. OpenBSD's iwx_phy_context_cmd_uhb.
+ */
+struct iwx_phy_context_cmd_mtl_ci_v1 {
+	/* COMMON_INDEX_HDR_API_S_VER_1 */
+	uint32_t id_and_color;
+	uint32_t action;
+	/* PHY_CONTEXT_DATA_API_S_VER_3, PHY_CONTEXT_DATA_API_S_VER_4 */
+	struct iwx_fw_channel_info_v1 ci;
+	uint32_t lmac_id;
+	uint32_t rxchain_info; /* reserved in _VER_4 */
+	uint32_t dsp_cfg_flags;
+	uint32_t reserved;
+} __packed; /* PHY_CONTEXT_CMD_API_VER_3, PHY_CONTEXT_CMD_API_VER_4 */
