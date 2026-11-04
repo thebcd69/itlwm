@@ -38,10 +38,12 @@ $(KEXT): $(OBJS) Info.plist
 	rm -rf $(KEXT)
 	mkdir -p $(KEXT)/Contents/MacOS
 	$(CXX) $(LDFLAGS) $(OBJS) -o $(KEXT)/Contents/MacOS/CS35L56Amp
-	sed -e 's/<string>0.1.0<\/string>/<string>0.1.0-$(VER)<\/string>/' Info.plist > $(KEXT)/Contents/Info.plist
+	sed -e 's/<string>0.1.0-dev<\/string>/<string>0.1.0-$(VER)<\/string>/' Info.plist > $(KEXT)/Contents/Info.plist
 	-cp $(FWDIR)/LICENSE.cirrus $(KEXT)/Contents/ 2>/dev/null
 	nm -u $(KEXT)/Contents/MacOS/CS35L56Amp | head -80
 	plutil -lint $(KEXT)/Contents/Info.plist
+	@v=$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' $(KEXT)/Contents/Info.plist); \
+	echo "$$v" | grep -Eq '^[0-9]+(\.[0-9]+){0,2}$$' || { echo "CFBundleVersion '$$v' is rejected by XNU"; exit 1; }
 
 clean:
 	rm -rf $(OUT)/obj $(KEXT)

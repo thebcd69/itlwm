@@ -1,6 +1,6 @@
 # STATUS (cs35l56-speakers)
 
-Son güncelleme: 2026-11-02 (oturum 1)
+Son güncelleme: 2026-11-04 (oturum 2)
 
 ## Bitti
 - DSDT çözüldü, amfi/SPI/GPIO haritası: docs/HARDWARE.md
@@ -13,7 +13,10 @@ Son güncelleme: 2026-11-02 (oturum 1)
 - Belgeler: docs/TEST-CHECKLIST.md (TR), applealc/README.md, linux-capture/ (opsiyonel live USB).
 
 ## Devam ediyor
-- (yok — donanım testi bekleniyor)
+- Test 1 (2026-11-04, 75c5f43) GEÇERSİZ: XNU kext'i hiç yüklemedi —
+  `Kext com.thebcd69.CS35L56Amp error - CFBundleVersion bad value '0.1.0-75c5f43'`.
+  Düzeltme: CFBundleVersion yalnız sayı (0.1.0), sha yalnız CFBundleShortVersionString'de;
+  Makefile artık sayısal olmayan CFBundleVersion'da derlemeyi kırıyor. Yeni derleme ile test tekrarlanacak.
 
 ## Sıradaki adım
 1. Sahibi docs/TEST-CHECKLIST.md adım 2'yi (`-cs35l56noplay -cs35l56dbg`) çalıştırıp log'u göndersin.
