@@ -45,6 +45,7 @@ private:
     void scheduleWorker(uint32_t delayMs);
     void parseBootArgs();
     void publish(const char *key, const char *val);
+    void publishLog();
     void publishNum(const char *key, uint64_t val);
 
     IOPCIDevice *pci = nullptr;

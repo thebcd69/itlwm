@@ -8,7 +8,10 @@
 #include <kern/clock.h>
 #include <stdint.h>
 #include <stddef.h>
-#define CS_LOG(fmt, ...) IOLog("CS35L56: " fmt "\n", ##__VA_ARGS__)
+// Kext IOLog output never reaches the unified log on the GU605MY hackintosh and the msgbuf is flooded
+// by NVRM, so CS_LOG also keeps a ring buffer that CS35L56Amp publishes as ioreg "CS35L56-Log".
+void cs_ringlog(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+#define CS_LOG(fmt, ...) cs_ringlog("CS35L56: " fmt "\n", ##__VA_ARGS__)
 static inline void cs_sleep_ms(uint32_t ms) { IOSleep(ms); }
 static inline void cs_delay_us(uint32_t us) { IODelay(us); }
 static inline void *cs_alloc(size_t n) { return IOMallocZero((vm_size_t)n); }

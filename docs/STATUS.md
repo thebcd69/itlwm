@@ -17,7 +17,11 @@ Son güncelleme: 2026-11-04 (oturum 2)
 - **Test 2 (79d1da6, `-cs35l56noplay -cs35l56dbg`, 2026-11-04): GEÇTİ.** ioreg `CS35L56-State = ready-noplay`,
   `CS35L56-SpkId = 0` → GPIO, SPI, iki amfinin REVID/probe'u ve iki amfiye wmfw+bin yüklemesi hatasız.
   (Bu makinede kext IOLog satırları birleşik loga düşmüyor, dmesg tamponu NVRM ile doluyor; durum ioreg'den okundu.)
-- Test 3: `-cs35l56noplay` kaldırıldı (config yedeği `config.plist.bak-t4`), sesli deneme bekleniyor.
+- Test 3 (layout 21): ses var ama yalnız tiz, zayıf → amfi yolu (NID 0x17) beslenmiyor.
+- Test 4 (`alcid=33`): bas geldi; genel ses zayıf (Windows'tan düşük) ve hafif distorsiyon. Amfi zayıflatması -6 dB.
+- Bu commit: CS_LOG satırları 32 KB halka tampona da yazılıyor, ioreg `CS35L56-Log` (sudo'suz okunur):
+  `ioreg -a -r -k CS35L56-Log | plutil -extract 0.CS35L56-Log raw - | base64 -D`
+  (PROT / EINT durumları, PS değişimleri). Sonraki: log'a göre `cs35l56_vol=0` ve crossover/EQ değerlendirmesi.
 
 ## Sıradaki adım
 1. Sahibi docs/TEST-CHECKLIST.md adım 2'yi (`-cs35l56noplay -cs35l56dbg`) çalıştırıp log'u göndersin.

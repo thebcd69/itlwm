@@ -84,6 +84,39 @@ void CS35L56Amp::parseBootArgs() {
     follow = PE_parse_boot_argn("-cs35l56follow", dummy, sizeof(dummy));
 }
 
+// ---- CS_LOG ring buffer (see Platform.h), one instance for the whole kext ----
+extern "C" int vsnprintf(char *, size_t, const char *, __builtin_va_list);
+static const uint32_t kCsRingSize = 32768;
+static char gCsRing[kCsRingSize];
+static volatile SInt32 gCsRingPos;
+static uint32_t gCsRingPublished;
+
+void cs_ringlog(const char *fmt, ...) {
+    char line[256];
+    __builtin_va_list ap;
+    __builtin_va_start(ap, fmt);
+    int n = vsnprintf(line, sizeof(line), fmt, ap);
+    __builtin_va_end(ap);
+    if (n <= 0) return;
+    if (n >= (int)sizeof(line)) n = (int)sizeof(line) - 1;
+    uint32_t start = (uint32_t)OSAddAtomic(n, &gCsRingPos) & 0x7FFFFFFFu;
+    for (int i = 0; i < n; i++) gCsRing[(start + (uint32_t)i) % kCsRingSize] = line[i];
+    IOLog("%s", line);
+}
+
+void CS35L56Amp::publishLog() {
+    uint32_t total = (uint32_t)gCsRingPos & 0x7FFFFFFFu;
+    if (total == gCsRingPublished) return;
+    gCsRingPublished = total;
+    uint32_t len = total < kCsRingSize ? total : kCsRingSize;
+    char *tmp = (char *)IOMalloc(len);
+    if (!tmp) return;
+    for (uint32_t i = 0; i < len; i++) tmp[i] = gCsRing[(total - len + i) % kCsRingSize];
+    OSData *d = OSData::withBytes(tmp, len);
+    IOFree(tmp, len);
+    if (d) { setProperty("CS35L56-Log", d); d->release(); }
+}
+
 void CS35L56Amp::publish(const char *key, const char *val) { setProperty(key, val); }
 void CS35L56Amp::publishNum(const char *key, uint64_t val) { setProperty(key, val, 64); }
 
@@ -339,6 +372,7 @@ void CS35L56Amp::worker() {
     }
     static int liveDumps = 0;
     if (!asleep && hdaOk && !needBringUp && (!follow || (ticks % 8) == 0) && (dbg || liveDumps < 30)) { liveDumps++; hda.dumpLive(); }
+    publishLog();
     IOLockUnlock(lock);
     if (!stopping) scheduleWorker(follow && running ? 250 : (dbg ? 2000 : 10000));
 }
