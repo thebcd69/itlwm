@@ -110,10 +110,13 @@
 
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
 
+/* MTL: IOLog instead of kprintf so messages reach the unified log
+ * (`log show --predicate 'sender == "itlwm"'`) and are not lost when the
+ * small msgbuf overflows with NVRM output. */
 #define XYLog(fmt, x...)\
 do\
 {\
-kprintf("%s: " fmt, "itlwm", ##x);\
+IOLog("%s: " fmt, "itlwm", ##x);\
 }while(0)
 
 typedef UInt8  u8;

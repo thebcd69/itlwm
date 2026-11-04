@@ -206,6 +206,14 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
 6. Disconnect / reconnect / sleep-wake: `deauth (MLD)` sequence with `SCD_QUEUE_CONFIG v3 remove`, `STA_REMOVE`, `LINK_CONFIG remove`, `MAC_CONFIG remove`, PHY remove all `-> 0`.
 7. On any firmware error: save the full log; the lines after `firmware error` / `nic_error` (error table) identify the failing command.
 
+## Hardware test 1 result (2026-11-04, kext e7703c6)
+
+- OpenCore injected the MTL kext (`Prelinked injection itlwm.kext v2.4.0 - Success`; binary contains the -89 firmware and all `MTL:` strings).
+- `CNVW@14,3` (8086:7E40 sub 0094 rev 0x20) stayed busy ~9.9 s, then itlwm detached: no `ItlIwx`/`itlwm` instance, no network interface. Same picture as stock 2.3.0 on 2026-11-02 (8.4 s). Points at a firmware-load timeout (ALIVE / PNVM / INIT_COMPLETE) but **which step is unknown**:
+  - `XYLog` used `kprintf`, which never reaches the unified log, and `sudo dmesg` (128 KB msgbuf) was already overwritten by NVRM output 23 min after boot.
+- Fix in this commit: `XYLog` -> `IOLog` (msgbuf + unified log). Retest with the new `mtl-<sha>` build and read
+  `log show --last boot --style compact --predicate 'eventMessage CONTAINS "itlwm:"'` (no sudo needed). boot-args also get `msgbuf=1048576`.
+
 ## Hardware test procedure (only when the owner is at the PC)
 
 - The owner is away until **Wednesday morning (Europe/Istanbul)**. No USB/macOS testing before that.
