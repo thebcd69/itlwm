@@ -23,13 +23,6 @@ Son güncelleme: 2026-11-04 (oturum 2)
   `ioreg -a -r -k CS35L56-Log | plutil -extract 0.CS35L56-Log raw - | base64 -D`
   (PROT / EINT durumları, PS değişimleri). Sonraki: log'a göre `cs35l56_vol=0` ve crossover/EQ değerlendirmesi.
 
-- Test 5 (2026-11-04): ses iyi, tepe seviye doğru; **sürgü eğrisi bozuk** (≈%80'e kadar az değişiyor, sonra sıçrıyor).
-  Sebep: AppleALC ALC285 layout 33 PathMap'te ses yalnız tiz yolunda (DAC 0x02→pin 0x14, PublishVolume=true);
-  bas yolu DAC 0x03→pin 0x17 (kanal 5/6) PublishVolume=false → amfiler sabit seviyede çalıyordu.
-  Düzeltme: amfi kazancı macOS çıkış sesini izliyor (AppleHDAEngineOutput altındaki 'outp'/'vlme' IOAudioLevelControl
-  ve 'mute' toggle'ı, 250 ms): kazanç = -cs35l56_vol - (max-değer)×adım (ALC285: 87 adım × 0,75 dB), 0'da/mute'ta mute.
-  Kapatmak için `-cs35l56novoltrack`.
-
 ## Sıradaki adım
 1. Sahibi docs/TEST-CHECKLIST.md adım 2'yi (`-cs35l56noplay -cs35l56dbg`) çalıştırıp log'u göndersin.
 2. Log'a göre: SPI saat (`-cs35l56clkfix`), GPIO kilidi (`-cs35l56noreset`), codec (`alcid=33`, `-cs35l56codecdump`).
@@ -42,5 +35,5 @@ Son güncelleme: 2026-11-04 (oturum 2)
 - Kalibrasyon yok: firmware varsayılan kalibrasyonla çalışır (Linux'ta "No calibration" durumu ile aynı).
 
 ## Boot-args
-`-cs35l56off`, `-cs35l56noplay`, `-cs35l56novoltrack`, `-cs35l56dbg`, `-cs35l56noreset`, `-cs35l56clkfix`, `-cs35l56codecdump`, `-cs35l56follow`,
+`-cs35l56off`, `-cs35l56noplay`, `-cs35l56dbg`, `-cs35l56noreset`, `-cs35l56clkfix`, `-cs35l56codecdump`, `-cs35l56follow`,
 `cs35l56_vol=<0..40 dB zayıflatma, varsayılan 6>`, `cs35l56_spkid=<0|1>`.
