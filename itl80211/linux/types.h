@@ -110,13 +110,14 @@
 
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
 
-/* MTL: IOLog instead of kprintf so messages reach the unified log
- * (`log show --predicate 'sender == "itlwm"'`) and are not lost when the
- * small msgbuf overflows with NVRM output. */
+/* MTL: every line goes to IOLog (msgbuf) and to a 64 KB ring buffer that itlwm publishes as the
+ * "MTL-Log" property of the PCI device, because on the GU605MY neither the unified log nor the
+ * msgbuf keeps kext output (see mtl_ringlog.h). */
+#include "mtl_ringlog.h"
 #define XYLog(fmt, x...)\
 do\
 {\
-IOLog("%s: " fmt, "itlwm", ##x);\
+mtl_ringlog("%s: " fmt, "itlwm", ##x);\
 }while(0)
 
 typedef UInt8  u8;

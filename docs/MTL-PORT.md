@@ -214,6 +214,17 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
 - Fix in this commit: `XYLog` -> `IOLog` (msgbuf + unified log). Retest with the new `mtl-<sha>` build and read
   `log show --last boot --style compact --predicate 'eventMessage CONTAINS "itlwm:"'` (no sudo needed). boot-args also get `msgbuf=1048576`.
 
+## Hardware test 2 result (2026-11-04, kext aaa77a3, IOLog)
+
+- Same failure: CNVW busy 14.9 s, no itlwm instance. **Still no driver log**: on this machine kext `IOLog` output does not
+  reach the unified log at all (ASUSATKD / CS35L56Amp lines are missing too, while their ioreg state is fine), the
+  `msgbuf=1048576` boot-arg is ignored (`kern.msgbuf` stays 131072) and NVRM fills the 128 KB msgbuf in ~8 min.
+- Fix: `itl80211/linux/mtl_ringlog.h` — every `XYLog` line also goes to a 64 KB ring buffer, published as OSData
+  property **`MTL-Log`** on the PCI nub (CNVW) from `releaseAll()` (= any start failure), at the end of a successful
+  `start()` and every ~30 s from the watchdog. The PCI nub survives a failed start. Read without sudo:
+  `ioreg -a -r -n CNVW@14,3 -k MTL-Log | plutil -extract 0.MTL-Log raw - | base64 -D`
+  (all `.c` files are compiled as C++ via project-level `GCC_INPUT_FILETYPE`, so the C++ header is safe).
+
 ## Hardware test procedure (only when the owner is at the PC)
 
 - The owner is away until **Wednesday morning (Europe/Istanbul)**. No USB/macOS testing before that.

@@ -400,11 +400,16 @@ bool itlwm::start(IOService *provider)
     }
     registerService();
     fNetIf->registerService();
+    XYLog("MTL: itlwm start complete\n");
+    mtl_ring_publish(pciNub);
     return true;
 }
 
 void itlwm::watchdogAction(IOTimerEventSource *timer)
 {
+    static UInt32 mtlPublishTick;
+    if ((++mtlPublishTick % 30) == 0)   /* kWatchDogTimerPeriod is 1 s: refresh MTL-Log every ~30 s */
+        mtl_ring_publish(pciNub);
     struct _ifnet *ifp = getIfp();
     (*ifp->if_watchdog)(ifp);
     watchdogTimer->setTimeoutMS(kWatchDogTimerPeriod);
@@ -477,6 +482,8 @@ void itlwm::stop(IOService *provider)
 
 void itlwm::releaseAll()
 {
+    XYLog("MTL: releaseAll (start failed or stopping)\n");
+    mtl_ring_publish(pciNub);
     if (fHalService) {
         fHalService->release();
         fHalService = NULL;
