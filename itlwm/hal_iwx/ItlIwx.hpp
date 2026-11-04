@@ -388,6 +388,7 @@ public:
     int    iwx_add_aux_sta(struct iwx_softc *);
     int    iwx_rm_sta_cmd(struct iwx_softc *, struct iwx_node *);
     int    iwx_rm_sta(struct iwx_softc *, struct iwx_node *);
+    void   iwx_mld_wait_tx_empty(struct iwx_softc *, int);
     uint8_t iwx_umac_scan_fill_channels(struct iwx_softc *sc,
                                 struct iwx_scan_channel_cfg_umac *chan, int n_ssids, int bgscan);
     int iwx_fill_probe_req_v1(struct iwx_softc *sc, struct iwx_scan_probe_req_v1 *preq1);

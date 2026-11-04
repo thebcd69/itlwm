@@ -6958,6 +6958,16 @@ iwx_tx(struct iwx_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
 
     uint16_t num_tbs;
     uint8_t tid, type, subtype;
+
+    /*
+     * MTL: itlwm's TX path runs on its own thread (no splnet as in OpenBSD), so a frame could reach
+     * the firmware while iwx_rm_sta() removes queues and the station -> LMAC SYSASSERT 0x251B
+     * on STA_REMOVE (hardware test 7). Drop frames while the MLD teardown runs.
+     */
+    if (sc->sc_use_mld_api && (sc->sc_flags & IWX_FLAG_TXFLUSH)) {
+        mbuf_freem(m);
+        return ENETDOWN;
+    }
     int i, totlen;
     int qid = IWX_INVALID_QUEUE;
     int idx;
@@ -7617,6 +7627,25 @@ iwx_rm_sta_cmd(struct iwx_softc *sc, struct iwx_node *in)
     return err;
 }
 
+/* MTL: wait (bounded) until the firmware has completed every queued TX frame, like Linux
+ * iwl_mvm_wait_sta_queues_empty() does after the flush and before queues/station are removed. */
+void ItlIwx::
+iwx_mld_wait_tx_empty(struct iwx_softc *sc, int max_ms)
+{
+    int waited, q, busy = 0;
+    
+    for (waited = 0; waited <= max_ms; waited += 10) {
+        busy = 0;
+        for (q = 0; q < nitems(sc->txq); q++)
+            if (sc->txq[q].queued)
+                busy++;
+        if (!busy)
+            break;
+        tsleep_nsec(&sc->txq, 0, "iwxtxe", MSEC_TO_NSEC(10));
+    }
+    XYLog("MTL: TX rings %s after %d ms (%d busy)\n", busy ? "NOT empty" : "empty", waited, busy);
+}
+
 int ItlIwx::
 iwx_rm_sta(struct iwx_softc *sc, struct iwx_node *in)
 {
@@ -7631,6 +7660,12 @@ iwx_rm_sta(struct iwx_softc *sc, struct iwx_node *in)
         return err;
     }
     
+    if (sc->sc_use_mld_api) {
+        /* MTL: see iwx_tx(); cleared at the end of this function. */
+        sc->sc_flags |= IWX_FLAG_TXFLUSH;
+        iwx_mld_wait_tx_empty(sc, 500);
+    }
+    
     /*
      * MTL (OpenBSD r1.230): New SCD_QUEUE_CONFIG API requires explicit
      * queue removal before a station gets removed.
@@ -7638,7 +7673,7 @@ iwx_rm_sta(struct iwx_softc *sc, struct iwx_node *in)
     if (sc->sc_use_mld_api && iwx_scd_queue_cfg_v3_supported(sc)) {
         err = iwx_disable_mgmt_queue(sc);
         if (err)
-            return err;
+            goto out;
         for (i = 0; i < IWX_MAX_TID_COUNT; i++) {
             int aqid = sc->sc_tid_data[i].qid;
             if (aqid == 0 || aqid == IWX_INVALID_QUEUE ||
@@ -7648,7 +7683,7 @@ iwx_rm_sta(struct iwx_softc *sc, struct iwx_node *in)
             if (err) {
                 XYLog("%s: could not disable Tx queue %d "
                       "(error %d)\n", DEVNAME(sc), aqid, err);
-                return err;
+                goto out;
             }
             sc->sc_tid_data[i].qid = IWX_INVALID_QUEUE;
         }
@@ -7658,7 +7693,7 @@ iwx_rm_sta(struct iwx_softc *sc, struct iwx_node *in)
     if (err) {
         printf("%s: could not remove STA (error %d)\n",
             DEVNAME(sc), err);
-        return err;
+        goto out;
     }
 
     sc->sc_rx_ba_sessions = 0;
@@ -7672,8 +7707,11 @@ iwx_rm_sta(struct iwx_softc *sc, struct iwx_node *in)
             continue;
         ieee80211_delba_request(ic, ni, 0, 1, i);
     }
-
-    return 0;
+    err = 0;
+out:
+    if (sc->sc_use_mld_api)
+        sc->sc_flags &= ~IWX_FLAG_TXFLUSH;
+    return err;
 }
 
 /*
@@ -12882,6 +12920,11 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
                 
                 break;
             }
+                
+            case IWX_WIDE_ID(IWX_LONG_GROUP, IWX_BT_PROFILE_NOTIFICATION):
+            case IWX_BT_PROFILE_NOTIFICATION:
+                /* MTL: BT coex profile updates (sent during scans); nothing to do. */
+                break;
                 
             default:
                 handled = 0;

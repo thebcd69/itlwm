@@ -270,6 +270,18 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
 - `he 0`: this AP did not advertise HE. HE under MLD (LINK_CONFIG HE params, STA pkt_ext) is still the known gap;
   needs a Wi-Fi 6 AP to test. 6 GHz: not in the v17 channel list (same as OpenBSD).
 
+## Hardware test 7 result (2026-11-04, kext 2b66293) — firmware assert when switching networks
+
+- Switching from the office AP to another SSID: deauth (MLD) -> TXPATH_FLUSH -> SCD v3 remove qid 1/2/3 -> STA_REMOVE ->
+  `ADVANCED_SYSASSERT 0x251B` (LMAC, last LMAC cmd 0x1C = TX_CMD, data2/3 DEADBEEF), UMAC `NMI_INTERRUPT_LMAC_FATAL`,
+  last host cmd 0x0068030C = 3.0c STA_REMOVE. The driver restarted the device and went back to scanning.
+- Cause: OpenBSD runs the whole deauth at splnet, so iwx_start() cannot run while queues/station are removed. In itlwm the
+  TX path runs on its own thread and IWX_FLAG_TXFLUSH was cleared right after the flush command, so a TX frame could
+  reach the firmware during the teardown. Linux also waits for the queues to drain (iwl_mvm_wait_sta_queues_empty).
+- Fix: MLD teardown keeps IWX_FLAG_TXFLUSH set from flush to STA/LINK removal, waits up to 500 ms for every TX ring to
+  drain (`MTL: TX rings empty after N ms`), and iwx_tx() drops frames while that flag is set. BT_PROFILE_NOTIFICATION
+  (0xce) is consumed quietly.
+
 ## Hardware test procedure (only when the owner is at the PC)
 
 - The owner is away until **Wednesday morning (Europe/Istanbul)**. No USB/macOS testing before that.
