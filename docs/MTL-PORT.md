@@ -233,6 +233,19 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
 - Fix: `mtl_ring_t g_mtl_ring` defined once in `ItlIwx.cpp`, `extern` in the header (verified: itlwm.o `U _g_mtl_ring`,
   ItlIwx.o `S _g_mtl_ring`). `attach fail` itself comes from `iwx_attach()` returning false ~15 s after start.
 
+## Hardware test 4 result (2026-11-04, kext 45d2998) — first real driver log
+
+- Firmware -89 parsed (218 cmd versions, MLD capa 1, fragmented PNVM capa 1, IML 13944 B), context-info load OK,
+  **`ALIVE v6 status 0xcafe (ok)`**, sku_id `0x000510d1/0/0`.
+- **PNVM not loaded**: name built as `iwlwifi-ma-b0-gf-a0-.pnvm` — itlwm's `strrchr()` is `reverse_strchr()`
+  (returns the char after the last '-'), so the cut was one too late. Firmware answered the doorbell with
+  status `0x50005`; after INIT_EXTENDED_CFG (2.3) and NVM_ACCESS_COMPLETE (c.0) it hit a **fatal firmware error**,
+  then `INIT_COMPLETE MISSING (err 35)` -> `attach fail`.
+- The SYSASSERT dump was skipped: `Invalid error log pointer 0x002f7208` — AX210+ error tables live below 0x400000.
+- Fixes: PNVM name cut at `find - 1`; error-table checks reject only 0 on AX210+ (Linux behaviour).
+  Next: expect `PNVM SKU block ... matches ALIVE sku_id` (0x000510d1 is one of the 4 SKU blocks) and, if it still
+  asserts, a real error dump (assert id / last host cmd).
+
 ## Hardware test procedure (only when the owner is at the PC)
 
 - The owner is away until **Wednesday morning (Europe/Istanbul)**. No USB/macOS testing before that.

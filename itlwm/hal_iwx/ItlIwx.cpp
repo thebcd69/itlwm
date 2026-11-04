@@ -2141,8 +2141,12 @@ iwx_read_pnvm(struct iwx_softc *sc)
         goto out;
     if (find - sc->sc_fwname - 1 <= 0)
         goto out;
-    /* keep everything before the last "-": "...-gf-a0-89.ucode" -> "...-gf-a0" */
-    fwname_copy[find - sc->sc_fwname] = '\0';
+    /*
+     * MTL: itlwm's strrchr() is reverse_strchr() (itl80211/linux/kernel.h), which returns the character
+     * AFTER the last '-', so cut one earlier: "...-gf-a0-89.ucode" -> "...-gf-a0". Cutting at `find`
+     * gave "iwlwifi-ma-b0-gf-a0-.pnvm" (hardware test 4: PNVM not found, status 0x50005, then SYSASSERT).
+     */
+    fwname_copy[find - sc->sc_fwname - 1] = '\0';
     
     snprintf(pnvm_name, sizeof(pnvm_name), "%s.pnvm",
          fwname_copy);
@@ -12184,7 +12188,8 @@ iwx_nic_umac_error(struct iwx_softc *sc)
     
     base = sc->sc_uc.uc_umac_error_event_table;
     
-    if (base < 0x400000) {
+    /* MTL: see iwx_nic_error() */
+    if (sc->sc_device_family >= IWX_DEVICE_FAMILY_AX210 ? base == 0 : base < 0x400000) {
         XYLog("%s: Invalid error log pointer 0x%08x\n",
               DEVNAME(sc), base);
         return;
@@ -12277,7 +12282,8 @@ iwx_nic_error(struct iwx_softc *sc)
     
     XYLog("%s: dumping device error log\n", DEVNAME(sc));
     base = sc->sc_uc.uc_lmac_error_event_table[0];
-    if (base < 0x400000) {
+    /* MTL: like Linux iwl_mvm_dump_lmac_error_log, only the pre-22000 range check rejects < 0x400000 */
+    if (sc->sc_device_family >= IWX_DEVICE_FAMILY_AX210 ? base == 0 : base < 0x400000) {
         XYLog("%s: Invalid error log pointer 0x%08x\n",
               DEVNAME(sc), base);
         return;
