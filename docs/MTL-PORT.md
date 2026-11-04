@@ -259,6 +259,17 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
 - Next: join a WPA2 network with HeliPort -> check the MLD association path (auth (MLD), PHY/RLC/MAC/LINK/STA config,
   SCD queue qid 1, SEC_KEY x2, session protection) in `MTL-Log`.
 
+## Hardware test 6 result (2026-11-04, kext 2b66293) — ASSOCIATED, DATA WORKS (HeliPort)
+
+- Office AP 50:ff:20:c4:3f:97, 2.4 GHz channel 10, WPA2 (pairwise CCMP via SEC_KEY, TKIP group key in software).
+- Whole MLD path `-> 0`: auth (MLD), PHY_CONTEXT v4 add/modify (20 -> 40 MHz, chains 1/1 -> 2/2), RLC v2, MAC_CONFIG v2
+  add/modify (assoc 1 aid 3), LINK_CONFIG v2 add/modify, STA_CONFIG (96 B) add/update (mimo 1, ampdu 5/3), SCD v3 qid 1,
+  SYSTEM_STATISTICS clear, SESSION_PROTECTION v2, TLC v4, tvqm agg queues, RX_BAID v2 for tid 0/4/5/6.
+- Rate: HT 40 MHz MCS15 NSS2 SGI LDPC (300 Mbps PHY). DHCP 10.0.0.149 on en3, default route en3.
+- networkQuality via en3: 26 Mbps down / 25 Mbps up, idle latency 178 ms (office uplink not yet compared).
+- `he 0`: this AP did not advertise HE. HE under MLD (LINK_CONFIG HE params, STA pkt_ext) is still the known gap;
+  needs a Wi-Fi 6 AP to test. 6 GHz: not in the v17 channel list (same as OpenBSD).
+
 ## Hardware test procedure (only when the owner is at the PC)
 
 - The owner is away until **Wednesday morning (Europe/Istanbul)**. No USB/macOS testing before that.
