@@ -246,6 +246,19 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
   Next: expect `PNVM SKU block ... matches ALIVE sku_id` (0x000510d1 is one of the 4 SKU blocks) and, if it still
   asserts, a real error dump (assert id / last host cmd).
 
+## Hardware test 5 result (2026-11-04, kext 2b66293) — DRIVER ATTACHES, SCAN WORKS
+
+- PNVM `iwlwifi-ma-b0-gf-a0.pnvm` loaded, SKU block `0x000510d1/0/0` matched ALIVE, fragmented PNVM 2 segments
+  (13684 B), doorbell status `0x50001`, `INIT_COMPLETE received (err 0)`, `MLD API ON`, MAC b0:47:e9:98:7c:63.
+- `itlwm start complete`; interface **en3** registered. init_hw: TX_ANT, BT_CONFIG, SOC, PHY cfg, POWER,
+  MCC (resp v6, 110 channels), SCAN_CFG v5, BEACON_FILTERING all `-> 0`.
+- UMAC scan v17: 38 channels per pass, `SCAN_COMPLETE_UMAC status 1`, 6-9 nodes in the net80211 table, 34 scans, no
+  firmware error.
+- Only noise: `unhandled firmware response 0xce/0x2000002c` = BT_PROFILE_NOTIFICATION (BT coex) — harmless, to be
+  consumed quietly in rx_pkt.
+- Next: join a WPA2 network with HeliPort -> check the MLD association path (auth (MLD), PHY/RLC/MAC/LINK/STA config,
+  SCD queue qid 1, SEC_KEY x2, session protection) in `MTL-Log`.
+
 ## Hardware test procedure (only when the owner is at the PC)
 
 - The owner is away until **Wednesday morning (Europe/Istanbul)**. No USB/macOS testing before that.
