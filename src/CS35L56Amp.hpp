@@ -71,6 +71,12 @@ private:
     bool clkFix = false;       // -cs35l56clkfix
     bool codecDump = false;    // -cs35l56codecdump (read-only HDA verbs)
     bool follow = false;       // -cs35l56follow: PLAY/PAUSE with the AppleHDA output engine
+    bool volTrack = true;      // amp gain follows the macOS output volume (-cs35l56novoltrack disables)
+    int lastVolQdb = 1;        // last gain written by volTick (1 = none yet)
+    int lastMute = -1;
+    IOService *volCtl = nullptr, *muteCtl = nullptr;
+    void volTick();
+    IOService *findOutputEngine();
     int idleTicks = 0;
     IOService *engine = nullptr;
     bool engineRunning();

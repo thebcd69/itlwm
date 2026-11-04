@@ -82,6 +82,7 @@ void CS35L56Amp::parseBootArgs() {
     clkFix = PE_parse_boot_argn("-cs35l56clkfix", dummy, sizeof(dummy));
     codecDump = PE_parse_boot_argn("-cs35l56codecdump", dummy, sizeof(dummy));
     follow = PE_parse_boot_argn("-cs35l56follow", dummy, sizeof(dummy));
+    volTrack = !PE_parse_boot_argn("-cs35l56novoltrack", dummy, sizeof(dummy));
 }
 
 // ---- CS_LOG ring buffer (see Platform.h), one instance for the whole kext ----
@@ -301,19 +302,80 @@ bool CS35L56Amp::bringUp() {
 
 bool CS35L56Amp::engineRunning() {
     // IOAudioEngine publishes kIOAudioEngineStateKey ("IOAudioEngineState"): 1 = running.
-    if (!engine) {
-        OSDictionary *m = IOService::serviceMatching("AppleHDAEngineOutput");
-        if (!m) return false;
-        OSIterator *it = IOService::getMatchingServices(m);
-        m->release();
-        if (!it) return false;
-        IOService *s = OSDynamicCast(IOService, it->getNextObject());
-        if (s) { s->retain(); engine = s; CS_LOG("follow: watching %s", s->getName()); }
-        it->release();
-        if (!engine) return false;
-    }
+    if (!findOutputEngine()) return false;
     OSNumber *st = OSDynamicCast(OSNumber, engine->getProperty("IOAudioEngineState"));
     return st && st->unsigned32BitValue() == 1;
+}
+
+IOService *CS35L56Amp::findOutputEngine() {
+    if (engine) return engine;
+    OSDictionary *m = IOService::serviceMatching("AppleHDAEngineOutput");
+    if (!m) return nullptr;
+    OSIterator *it = IOService::getMatchingServices(m);
+    m->release();
+    if (!it) return nullptr;
+    IOService *s = OSDynamicCast(IOService, it->getNextObject());
+    if (s) { s->retain(); engine = s; CS_LOG("watching output engine %s", s->getName()); }
+    it->release();
+    return engine;
+}
+
+static uint32_t ctlNum(IOService *c, const char *key, uint32_t dflt) {
+    OSNumber *n = c ? OSDynamicCast(OSNumber, c->getProperty(key)) : nullptr;
+    return n ? n->unsigned32BitValue() : dflt;
+}
+
+// Layout 33 publishes the macOS volume only on the tweeter path (DAC 0x02 -> pin 0x14); the woofer path
+// (DAC 0x03 -> pin 0x17 -> amp I2S) has PublishVolume=false, so the amps played at a fixed level and the
+// slider felt wrong (barely changes up to ~80 %, then jumps). Make the amp gain follow the same dB curve:
+// gain = -volAttenDb - (max - value) * step, mute when the output is muted or at 0.
+void CS35L56Amp::volTick() {
+    if (!volTrack || !amp[0] || !amp[1]) return;
+    if (!volCtl || !muteCtl) {
+        IOService *eng = findOutputEngine();
+        if (!eng) return;
+        OSIterator *it = eng->getChildIterator(gIOServicePlane);
+        if (!it) return;
+        while (OSObject *o = it->getNextObject()) {
+            IOService *c = OSDynamicCast(IOService, o);
+            if (!c || ctlNum(c, "IOAudioControlUsage", 0) != 0x6f757470u /* 'outp' */) continue;
+            uint32_t sub = ctlNum(c, "IOAudioControlSubType", 0), ch = ctlNum(c, "IOAudioControlChannelID", 99);
+            if (!volCtl && c->metaCast("IOAudioLevelControl") && sub == 0x766c6d65u /* 'vlme' */ && (ch == 0 || ch == 1)) {
+                c->retain(); volCtl = c;
+            } else if (!muteCtl && c->metaCast("IOAudioToggleControl") && sub == 0x6d757465u /* 'mute' */ && (ch == 0 || ch == 1)) {
+                c->retain(); muteCtl = c;
+            }
+        }
+        it->release();
+        if (volCtl)
+            CS_LOG("volume tracking: control range %u..%u (%d..%d dB/65536), mute control %s",
+                   ctlNum(volCtl, "IOAudioLevelControlMinValue", 0), ctlNum(volCtl, "IOAudioLevelControlMaxValue", 0),
+                   (int)ctlNum(volCtl, "IOAudioLevelControlMinDB", 0), (int)ctlNum(volCtl, "IOAudioLevelControlMaxDB", 0),
+                   muteCtl ? "found" : "missing");
+        if (!volCtl) return;
+    }
+    int32_t vmin = (int32_t)ctlNum(volCtl, "IOAudioLevelControlMinValue", 0);
+    int32_t vmax = (int32_t)ctlNum(volCtl, "IOAudioLevelControlMaxValue", 0);
+    int32_t dbmin = (int32_t)ctlNum(volCtl, "IOAudioLevelControlMinDB", 0);   // 16.16 fixed point
+    int32_t dbmax = (int32_t)ctlNum(volCtl, "IOAudioLevelControlMaxDB", 0);
+    int32_t v = (int32_t)ctlNum(volCtl, "IOAudioControlValue", (uint32_t)vmax);
+    bool muted = muteCtl && ctlNum(muteCtl, "IOAudioControlValue", 0) != 0;
+    if (vmax <= vmin) return;
+    if (v < vmin) v = vmin;
+    if (v > vmax) v = vmax;
+    // dB below max for this slider position, in 0.25 dB units: (dbmax - db(v)) * 4 / 65536
+    int64_t belowFixed = (int64_t)(dbmax - dbmin) * (vmax - v) / (vmax - vmin);
+    int qdb = -4 * volAttenDb - (int)((belowFixed * 4) / 65536);
+    bool mute = muted || v == vmin;
+    if (qdb == lastVolQdb && (int)mute == lastMute) return;
+    for (int i = 0; i < 2; i++) {
+        if (mute != (lastMute == 1)) amp[i]->setMute(mute);
+        if (qdb != lastVolQdb) amp[i]->setVolumeQdB(qdb);
+    }
+    if (dbg || lastMute < 0) CS_LOG("volume tracking: value %d/%d mute %d -> amp %d.%02d dB", v, vmax, mute,
+                                   qdb / 4, (-qdb % 4) * 25);
+    lastVolQdb = qdb;
+    lastMute = mute ? 1 : 0;
 }
 
 void CS35L56Amp::followTick() {
@@ -356,8 +418,11 @@ void CS35L56Amp::worker() {
         if (bus[0].errorCount() + bus[1].errorCount() > 50) failAll("too many SPI errors");
     } else if (!asleep && running) {
         ticks++;
-        bool verbose = dbg || ticks <= 6;
-        for (int i = 0; i < 2; i++) {
+        volTick();
+        // With volume tracking the worker runs every 250 ms; keep status/PS checks at the old 10 s (2 s dbg) pace.
+        bool statusTick = !volTrack || (ticks % (dbg ? 8 : 40)) == 1;
+        bool verbose = dbg || ticks <= 6 * (volTrack ? 40 : 1);
+        for (int i = 0; statusTick && i < 2; i++) {
             if (!amp[i]) continue;
             amp[i]->logStatus(!verbose);
             // Keep the amps in PS0: if firmware fell back to standby, re-issue PLAY (bounded).
@@ -374,7 +439,7 @@ void CS35L56Amp::worker() {
     if (!asleep && hdaOk && !needBringUp && (!follow || (ticks % 8) == 0) && (dbg || liveDumps < 30)) { liveDumps++; hda.dumpLive(); }
     publishLog();
     IOLockUnlock(lock);
-    if (!stopping) scheduleWorker(follow && running ? 250 : (dbg ? 2000 : 10000));
+    if (!stopping) scheduleWorker((follow || volTrack) && running ? 250 : (dbg ? 2000 : 10000));
 }
 
 IOReturn CS35L56Amp::setPowerState(unsigned long state, IOService *) {
@@ -416,6 +481,8 @@ void CS35L56Amp::stop(IOService *provider) {
     }
     for (int i = 0; i < 2; i++) { delete amp[i]; amp[i] = nullptr; }
     if (engine) { engine->release(); engine = nullptr; }
+    if (volCtl) { volCtl->release(); volCtl = nullptr; }
+    if (muteCtl) { muteCtl->release(); muteCtl = nullptr; }
     hda.release();
     spi.release();
     gpio.release();
