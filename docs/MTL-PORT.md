@@ -282,6 +282,17 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
   drain (`MTL: TX rings empty after N ms`), and iwx_tx() drops frames while that flag is set. BT_PROFILE_NOTIFICATION
   (0xce) is consumed quietly.
 
+## Hardware test 8 result (2026-11-04, kext 32fb8a5, NullMoth 2.7.1, OpenCore now on the KIOXIA ESP)
+
+- Same `SYSASSERT 0x251B` on STA_REMOVE, this time after an automatic roam in RUN (background scan picked Dmsr2,
+  2.4 GHz ch 10): `node_join_bss ic_state=4` -> mac_ctxt_task `MAC_CONFIG modify assoc 1 aid 0` (new BSS, old STA still in
+  fw) -> RX BA remove -> MAC modify assoc 0 -> deauth (MLD) -> session protection remove -> flush -> SCD remove qid 1 ->
+  STA_REMOVE -> assert (last LMAC cmd TX_CMD 0x1C).
+- The new drain wait reported "1 busy" for 510 ms: it counted ring 0 (host command queue, never 0). All TX rings were empty.
+- Changes: drain wait skips IWX_DQA_CMD_QUEUE and logs rings 1-3; MLD skips the mac_ctxt_task MAC modify while
+  `ni_associd == 0` (roam in progress), matching Linux which never retargets the MAC before the old STA is removed.
+  If it still asserts, next candidates: STA "disable TX" modify before removal, link deactivate before STA_REMOVE.
+
 ## Hardware test procedure (only when the owner is at the PC)
 
 - The owner is away until **Wednesday morning (Europe/Istanbul)**. No USB/macOS testing before that.

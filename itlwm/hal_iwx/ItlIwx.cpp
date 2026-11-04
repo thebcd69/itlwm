@@ -4469,6 +4469,18 @@ iwx_mac_ctxt_task(void *arg)
         return;
     }
     
+    /*
+     * MTL: when net80211 roams while in RUN, ic_bss already points at the new BSS (aid 0) but the firmware
+     * still has the old station/link. Linux never modifies the MAC for a new BSS before the old station is
+     * gone; doing so preceded the SYSASSERT 0x251B on STA_REMOVE (hardware tests 7/8). Skip it: the
+     * RUN -> AUTH transition tears down and re-creates everything for the new BSS.
+     */
+    if (sc->sc_use_mld_api && in->in_ni.ni_associd == 0) {
+        XYLog("MTL: skip MAC_CONFIG modify for unassociated BSS (roam in progress)\n");
+        splx(s);
+        return;
+    }
+    
     err = that->iwx_mac_ctxt_cmd(sc, in, IWX_FW_CTXT_ACTION_MODIFY, 1);
     if (err)
         printf("%s: failed to update MAC\n", DEVNAME(sc));
@@ -7637,13 +7649,15 @@ iwx_mld_wait_tx_empty(struct iwx_softc *sc, int max_ms)
     for (waited = 0; waited <= max_ms; waited += 10) {
         busy = 0;
         for (q = 0; q < nitems(sc->txq); q++)
-            if (sc->txq[q].queued)
+            if (q != IWX_DQA_CMD_QUEUE && sc->txq[q].queued)    /* ring 0 = host commands, not TX */
                 busy++;
         if (!busy)
             break;
         tsleep_nsec(&sc->txq, 0, "iwxtxe", MSEC_TO_NSEC(10));
     }
     XYLog("MTL: TX rings %s after %d ms (%d busy)\n", busy ? "NOT empty" : "empty", waited, busy);
+    for (q = 1; q < 4 && q < nitems(sc->txq); q++)
+        XYLog("MTL:   ring %d qid %d cur %d queued %d\n", q, sc->txq[q].qid, sc->txq[q].cur, sc->txq[q].queued);
 }
 
 int ItlIwx::
