@@ -25,11 +25,14 @@ struct mtl_ring_t {
     char buf[MTL_RING_SIZE];
 };
 
-/* Zero-initialised POD with a trivial constructor: no static-init guard is emitted. */
+/* ONE ring for the whole kext. It must be a real global defined in exactly one translation unit
+ * (itlwm/hal_iwx/ItlIwx.cpp, built into both itlwm and AirportItlwm): with -fapple-kext there are
+ * no weak definitions, so a function-local static in an inline function becomes a private copy per
+ * .cpp - ItlIwx lines never reached the published buffer in hardware test 3. */
+extern mtl_ring_t g_mtl_ring;
 static inline mtl_ring_t &mtl_ring()
 {
-    static mtl_ring_t r;
-    return r;
+    return g_mtl_ring;
 }
 
 static inline void mtl_ringlog(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

@@ -225,6 +225,14 @@ MTL: auth (MLD) ... / PHY_CONTEXT v4 ... -> 0 / RLC_CONFIG v2 ... / MAC_CONFIG v
   `ioreg -a -r -n CNVW@14,3 -k MTL-Log | plutil -extract 0.MTL-Log raw - | base64 -D`
   (all `.c` files are compiled as C++ via project-level `GCC_INPUT_FILETYPE`, so the C++ header is safe).
 
+## Hardware test 3 result (2026-11-04, kext a2d1223)
+
+- `MTL-Log` was published, but only with itlwm.cpp lines (25x `free`, `attach fail`, `releaseAll`): the ring was a
+  function-local static in a `static inline` function, i.e. one private copy per .cpp; with `-fapple-kext` there are no
+  weak definitions, so plain `inline` does not merge them either (checked with llvm-nm: local `b` symbol per object).
+- Fix: `mtl_ring_t g_mtl_ring` defined once in `ItlIwx.cpp`, `extern` in the header (verified: itlwm.o `U _g_mtl_ring`,
+  ItlIwx.o `S _g_mtl_ring`). `attach fail` itself comes from `iwx_attach()` returning false ~15 s after start.
+
 ## Hardware test procedure (only when the owner is at the PC)
 
 - The owner is away until **Wednesday morning (Europe/Istanbul)**. No USB/macOS testing before that.

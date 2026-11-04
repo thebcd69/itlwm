@@ -139,6 +139,9 @@ int iwx_debug = 1;
 #define DPRINTFN(n, x)    do { ; } while (0)
 #endif
 
+/* MTL: the single kext-wide log ring (see itl80211/linux/mtl_ringlog.h). */
+mtl_ring_t g_mtl_ring;
+
 bool ItlIwx::attach(IOPCIDevice *device)
 {
     pci.pa_tag = device;
