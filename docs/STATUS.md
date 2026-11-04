@@ -13,10 +13,11 @@ Son güncelleme: 2026-11-04 (oturum 2)
 - Belgeler: docs/TEST-CHECKLIST.md (TR), applealc/README.md, linux-capture/ (opsiyonel live USB).
 
 ## Devam ediyor
-- Test 1 (2026-11-04, 75c5f43) GEÇERSİZ: XNU kext'i hiç yüklemedi —
-  `Kext com.thebcd69.CS35L56Amp error - CFBundleVersion bad value '0.1.0-75c5f43'`.
-  Düzeltme: CFBundleVersion yalnız sayı (0.1.0), sha yalnız CFBundleShortVersionString'de;
-  Makefile artık sayısal olmayan CFBundleVersion'da derlemeyi kırıyor. Yeni derleme ile test tekrarlanacak.
+- Test 1 (75c5f43) geçersizdi: XNU `CFBundleVersion '0.1.0-75c5f43'` değerini reddetti → 79d1da6'da düzeltildi.
+- **Test 2 (79d1da6, `-cs35l56noplay -cs35l56dbg`, 2026-11-04): GEÇTİ.** ioreg `CS35L56-State = ready-noplay`,
+  `CS35L56-SpkId = 0` → GPIO, SPI, iki amfinin REVID/probe'u ve iki amfiye wmfw+bin yüklemesi hatasız.
+  (Bu makinede kext IOLog satırları birleşik loga düşmüyor, dmesg tamponu NVRM ile doluyor; durum ioreg'den okundu.)
+- Test 3: `-cs35l56noplay` kaldırıldı (config yedeği `config.plist.bak-t4`), sesli deneme bekleniyor.
 
 ## Sıradaki adım
 1. Sahibi docs/TEST-CHECKLIST.md adım 2'yi (`-cs35l56noplay -cs35l56dbg`) çalıştırıp log'u göndersin.
